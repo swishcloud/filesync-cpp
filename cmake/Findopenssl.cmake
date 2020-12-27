@@ -1,0 +1,8 @@
+message("finding OpenSSL...")
+find_library(OPENSLL_libssl NAMES libssl.a)
+find_library(OPENSLL_libcrypto NAMES libcrypto.a)
+find_path(OPENSSL_INCLUDE_DIR NAMES include)
+message(${OPENSSL_INCLUDE_DIR})
+find_path(OPENSSL_BIN_DIR NAMES lib/libcrypto.a)
+include(FindPackageHandleStandardArgs)
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(openssl REQUIRED_VARS OPENSLL_libssl OPENSLL_libcrypto OPENSSL_INCLUDE_DIR OPENSSL_BIN_DIR)
