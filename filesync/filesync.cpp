@@ -1,15 +1,15 @@
 ﻿// filesync.cpp : Defines the entry point for the application.
 //
-
+#include <http.h>
+#include <tcp.h>
 #include "filesync.h"
 #include <locale.h>
 #include "db_manager.h"
-#include <http.h>
 #include <nlohmann/json.hpp>
 #include <assert.h>
 
-#include <tcp.h>
 #include <regex>
+#include <monitor.h>
 using namespace nlohmann;
 namespace filesync
 {
@@ -86,6 +86,8 @@ int main()
 #endif
 	try
 	{
+		filesync::monitor monitor;
+		monitor.watch();
 		filesync::FileSync *filesync = new filesync::FileSync{"/"};
 		filesync::connect(filesync);
 		filesync->check_sync_path();
@@ -102,14 +104,14 @@ int main()
 			{
 				continue;
 			}
-			if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
+			/*if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
 			{
 				continue;
 			}
 			if (!filesync->sync_local_deleted())
 			{
 				continue;
-			}
+			}*/
 			filesync->committer->commit();
 			std::cout << "-----end syncing" << std::endl;
 		}
@@ -123,6 +125,11 @@ int main()
 }
 bool filesync::FileSync::sync_server()
 {
+	if (!this->need_sync_server)
+	{
+		filesync::print_info("Server have no changes.");
+		return true;
+	}
 	std::vector<std::string> errs;
 	auto files = this->db.get_files();
 	for (int i = 0; i < files->count; i++)
@@ -182,6 +189,7 @@ bool filesync::FileSync::sync_server()
 		}
 	}
 	delete (files);
+	this->need_sync_server = false;
 	return errs.size() == 0;
 }
 bool filesync::FileSync::sync_local_added_or_modified(const char *path)
@@ -408,8 +416,10 @@ void filesync::FileSync::get_all_server_files()
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
 		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str());
 		this->conf.commit_id = this->conf.max_commit_id;
+		this->need_sync_server = true;
 		this->conf.save();
 	}
+	this->need_sync_server = false;
 }
 void filesync::FileSync::save_change(json change, const char *commit_id)
 {
@@ -452,6 +462,7 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 		EXCEPTION("unknown change type.");
 		break;
 	}
+	this->need_sync_server = true;
 	/*{{if eq .ChangeType 1}}
 
 				add
@@ -689,7 +700,6 @@ filesync::File filesync::FileSync::server_file(std::string server_path, std::str
 }
 void filesync::throw_exception(std::string err)
 {
-	auto str = common::string_format("EXCEPTION:%s", err.c_str()).c_str();
-	std::cout << str << std::endl;
+	auto str = common::string_format("EXCEPTION:%s", err.c_str());
 	EXCEPTION(str);
 }

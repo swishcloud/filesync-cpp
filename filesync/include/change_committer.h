@@ -6,9 +6,9 @@
 namespace filesync
 {
 	class FileSync;
-	class create_directory_action;
-	class create_file_action;
-	class delete_by_path_action;
+	struct create_directory_action;
+	struct create_file_action;
+	struct delete_by_path_action;
 	class ChangeCommitter
 	{
 	private:

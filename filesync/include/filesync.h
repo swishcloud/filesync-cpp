@@ -59,6 +59,7 @@ private:
 			return strcmp(a, b) == 0;
 		};
 	};
+	bool need_sync_server = false;
 	char *server_location;
 	void find_all_files(char *path);
 	void corret_path_sepatator(char *path);
