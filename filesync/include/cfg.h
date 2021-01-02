@@ -11,7 +11,7 @@ namespace filesync
 #ifdef __linux__
 	const std::filesystem::path datapath = "/var/filesync/bigyasuo";
 #else
-	const std::filesystem::path datapath = //getenv("APPDATA");
+	const std::filesystem::path datapath = getenv("APPDATA");
 #endif
 	class CONFIG
 	{

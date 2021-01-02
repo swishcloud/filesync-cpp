@@ -35,7 +35,12 @@ namespace filesync
         char buffer[128];
         char *result = new char{};
         // Open pipe to file
-        FILE *pipe = popen(command, "r");
+        FILE *pipe;
+#ifdef __linux__
+        pipe = popen(command, "r");
+#else
+        pipe = _popen(command, "r");
+#endif
         if (!pipe)
         {
             err_str = "popen failed!";
@@ -45,7 +50,7 @@ namespace filesync
         }
         if (fgets(buffer, 128, pipe) != NULL)
         {
-            int newsize = strlen(result) + strlen(buffer) + 1;
+            size_t newsize = strlen(result) + strlen(buffer) + 1;
             char *temp = new char[newsize];
             char *temp2 = temp + strlen(result);
             memcpy(temp, result, strlen(result));
@@ -54,10 +59,14 @@ namespace filesync
             delete (result);
             result = temp;
         }
+#ifdef __linux__
         pclose(pipe);
+#else
+        _pclose(pipe);
+#endif
         delete (err_str);
         return result;
-    }
+    } // namespace filesync
     std::string file_md5(const char *filename)
     {
         bool linux_os = true;

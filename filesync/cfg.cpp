@@ -65,7 +65,7 @@ void filesync::CONFIG::save()
 std::filesystem::path filesync::CONFIG::path()
 {
 	auto path = std::filesystem::path(datapath).append("cfg");
-	auto parent = filesync::get_parent_dir(path.c_str());
+	auto parent = filesync::get_parent_dir(path.string().c_str());
 	if (!std::filesystem::exists(parent))
 	{
 		assert(std::filesystem::create_directories(parent));

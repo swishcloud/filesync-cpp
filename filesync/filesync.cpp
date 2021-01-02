@@ -17,7 +17,7 @@ namespace filesync
 	std::string get_parent_dir(const char *filename)
 	{
 		std::cmatch m{};
-		std::regex reg{".*/"};
+		std::regex reg{".*[/\\\\]"};
 		if (!std::regex_search(filename, m, reg))
 		{
 			EXCEPTION("impossible exception.");
@@ -71,7 +71,7 @@ int main()
 
 #ifdef __linux__
 #else
-	if (!SetConsoleCP(CP_UTF8))
+	/* if (!SetConsoleCP(CP_UTF8))
 	{
 		// An error occurred; handle it. Call GetLastError() for more information.
 		// ...
@@ -82,7 +82,7 @@ int main()
 		// An error occurred; handle it. Call GetLastError() for more information.
 		// ...
 		exit(1);
-	}
+	} */
 #endif
 	try
 	{
@@ -648,8 +648,8 @@ char *filesync::get_token()
 	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
 	if (!f)
 	{
-		std::cout << "the token file does not exist" << std::endl;
-		return NULL;
+		system("filesync_old login");
+		return get_token();
 	}
 	int size = 1000;
 	char *buf = new char[((long)size) + 1];
