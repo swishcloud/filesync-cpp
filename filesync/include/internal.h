@@ -3,6 +3,11 @@
 #include <iostream>
 #include <common.h>
 #include <regex>
+#ifdef __linux__
+#define linux_os true
+#else
+#define linux_os false
+#endif
 namespace filesync
 {
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";

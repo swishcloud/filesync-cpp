@@ -71,7 +71,7 @@ int main()
 
 #ifdef __linux__
 #else
-	/* if (!SetConsoleCP(CP_UTF8))
+	if (!SetConsoleCP(CP_UTF8))
 	{
 		// An error occurred; handle it. Call GetLastError() for more information.
 		// ...
@@ -82,7 +82,7 @@ int main()
 		// An error occurred; handle it. Call GetLastError() for more information.
 		// ...
 		exit(1);
-	} */
+	}
 #endif
 	try
 	{
@@ -498,7 +498,7 @@ start:
 			if (!std::filesystem::remove(this->conf.db_path, err))
 			{
 				std::cout << err.message() << std::endl;
-				exit(1);
+				EXCEPTION(err.message());
 			}
 		}
 		this->conf.sync_path = typed;
@@ -605,7 +605,7 @@ char *filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
 	int len = strlen(root_path), result_path_len = strlen(path) - len;
 	if (result_path_len == 0)
 	{
-		return new char{'/'};
+		return new char[]{'/', '\0'};
 	}
 	char *buf = new char[result_path_len + 1];
 	if (memcmp(path, root_path, len) == 0)
@@ -645,11 +645,11 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(const char *re
 }
 char *filesync::get_token()
 {
+	system("filesync_old login");
 	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
 	if (!f)
 	{
-		system("filesync_old login");
-		return get_token();
+		EXCEPTION("the token file does not exist");
 	}
 	int size = 1000;
 	char *buf = new char[((long)size) + 1];

@@ -32,10 +32,12 @@ namespace filesync
     char *exec_cmd(const char *command, char **err)
     {
         char *err_str = NULL;
-        char buffer[128];
+        const int buffer_size = 128;
+        char buffer[buffer_size];
         char *result = new char{};
         // Open pipe to file
         FILE *pipe;
+        filesync::print_debug(command);
 #ifdef __linux__
         pipe = popen(command, "r");
 #else
@@ -48,7 +50,7 @@ namespace filesync
                 *err = err_str;
             return NULL;
         }
-        if (fgets(buffer, 128, pipe) != NULL)
+        while (fgets(buffer, buffer_size, pipe) != NULL)
         {
             size_t newsize = strlen(result) + strlen(buffer) + 1;
             char *temp = new char[newsize];
@@ -69,7 +71,6 @@ namespace filesync
     } // namespace filesync
     std::string file_md5(const char *filename)
     {
-        bool linux_os = true;
         if (!std::filesystem::exists(filename))
         {
             EXCEPTION("failed to calculate md5 due to the file does not exist.");

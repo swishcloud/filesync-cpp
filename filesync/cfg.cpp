@@ -60,7 +60,7 @@ void filesync::CONFIG::save()
 	}
 	out.flush();
 	out.close();
-	filesync::print_debug(common::string_format("saved config:%s", this->path().c_str()));
+	filesync::print_debug(common::string_format("saved config:%s", this->path().string().c_str()));
 }
 std::filesystem::path filesync::CONFIG::path()
 {
