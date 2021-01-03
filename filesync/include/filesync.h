@@ -14,6 +14,9 @@
 #include <cfg.h>
 #include <memory>
 #include <internal.h>
+#include <monitor.h>
+#include <queue>
+#include <mutex>
 // TODO: Reference additional headers your program requires here.
 #define TOKEN_FILE_PATH "token"
 namespace filesync
@@ -69,8 +72,11 @@ private:
 	char *get_relative_path_by_fulllpath(const char *path);
 	std::filesystem::path relative_to_server_path(const char *relative_path);
 	bool upload_file(std::ifstream &fs, const char *md5, long size);
+	std::mutex _local_file_changes_mutex;
+	std::queue<filesync::monitor::change *> _local_file_changes;
 
 public:
+	static void monitor_cb(filesync::monitor::change *c, void *obj);
 	filesync::PartitionConf conf;
 	filesync::db_manager db;
 	CONFIG cfg;
@@ -88,9 +94,11 @@ public:
 	void print();
 	bool sync_server();
 	bool sync_local_added_or_modified(const char *path);
-	bool sync_local_deleted();
+	bool sync_local_deleted(const char *path);
 	File local_file(std::string full_path, bool is_directory);
 	File server_file(std::string server_path, std::string commit_id, bool is_directory);
+	void add_local_file_change(filesync::monitor::change *change);
+	filesync::monitor::change *get_local_file_change();
 };
 struct filesync::File
 {

@@ -86,13 +86,14 @@ int main()
 #endif
 	try
 	{
-		filesync::monitor monitor;
-		monitor.watch();
 		filesync::FileSync *filesync = new filesync::FileSync{"/"};
 		filesync::connect(filesync);
 		filesync->check_sync_path();
+		filesync::monitor::MONITOR monitor(&filesync::FileSync::monitor_cb, filesync, filesync->conf.sync_path);
+		monitor.watch();
 		filesync->db.init(filesync->conf.db_path.c_str());
 		filesync->get_all_server_files();
+		bool process_monitor = false;
 		while (1)
 		{
 			std::cout << "-----begin syncing" << std::endl;
@@ -104,16 +105,43 @@ int main()
 			{
 				continue;
 			}
-			/*if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
+
+			bool procoss_monitor_failed = false;
+			if (process_monitor)
 			{
-				continue;
+				while (auto local_change = filesync->get_local_file_change())
+				{
+					local_change->path;
+					std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
+
+					if (!filesync->sync_local_added_or_modified(local_change->path.c_str()))
+					{
+						procoss_monitor_failed = true;
+					}
+					if (!filesync->sync_local_deleted(local_change->path.c_str()))
+					{
+						procoss_monitor_failed = true;
+					}
+					delete (local_change);
+				}
 			}
-			if (!filesync->sync_local_deleted())
+			else
 			{
-				continue;
-			}*/
-			filesync->committer->commit();
+				if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
+				{
+					continue;
+				}
+				if (!filesync->sync_local_deleted(NULL))
+				{
+					continue;
+				}
+				process_monitor = true;
+				filesync::print_info("begin processing  monitor...");
+			}
+			if (!procoss_monitor_failed)
+				filesync->committer->commit();
 			std::cout << "-----end syncing" << std::endl;
+			Sleep(1000 * 5);
 		}
 		delete (filesync);
 	}
@@ -127,7 +155,7 @@ bool filesync::FileSync::sync_server()
 {
 	if (!this->need_sync_server)
 	{
-		filesync::print_info("Server have no changes.");
+		//todo:uncomment this. filesync::print_info("Server have no changes.");
 		return true;
 	}
 	std::vector<std::string> errs;
@@ -270,9 +298,19 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 	delete (file_db);
 	return errs.size() == 0;
 }
-bool filesync::FileSync::sync_local_deleted()
+bool filesync::FileSync::sync_local_deleted(const char *path)
 {
-	auto files = this->db.get_files();
+	filesync::sqlite_query_result *files;
+	if (path == NULL)
+	{
+		files = this->db.get_files();
+	}
+	else
+	{
+		auto relative_path = this->get_relative_path_by_fulllpath(path);
+		files = this->db.get_file(relative_path);
+	}
+
 	for (int i = 0; i < files->count; i++)
 	{
 		const char *file_name = files->get_value("name", i);
@@ -542,8 +580,8 @@ start:
 	}
 	if (data.is_null())
 	{
-		std::cout << "WARNING:"
-				  << "not got file changes." << std::endl;
+		//std::cout << "WARNING:"
+		//		  << "not got file changes." << std::endl;
 		this->conf.max_commit_id = this->conf.commit_id;
 		this->conf.save();
 		return true;
@@ -656,6 +694,7 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(const char *re
 }
 char *filesync::get_token()
 {
+	//return new char[]{"temp_token_str"};
 	system("filesync_old login");
 	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
 	if (!f)
@@ -702,4 +741,28 @@ void filesync::throw_exception(std::string err)
 {
 	auto str = common::string_format("EXCEPTION:%s", err.c_str());
 	EXCEPTION(str);
+}
+void filesync::FileSync::monitor_cb(filesync::monitor::change *c, void *obj)
+{
+	auto filesync = (filesync::FileSync *)obj;
+	auto path = "/" + c->path;
+	std::replace(path.begin(), path.end(), '\\', '/');
+	std::cout << "Entered the callback:" << path << std::endl;
+	filesync->add_local_file_change(c);
+}
+void filesync::FileSync::add_local_file_change(filesync::monitor::change *change)
+{
+	std::lock_guard<std::mutex> guard(_local_file_changes_mutex);
+	this->_local_file_changes.push(change);
+}
+filesync::monitor::change *filesync::FileSync::get_local_file_change()
+{
+	std::lock_guard<std::mutex> guard(_local_file_changes_mutex);
+	if (this->_local_file_changes.empty())
+	{
+		return NULL;
+	}
+	auto change = this->_local_file_changes.front();
+	this->_local_file_changes.pop();
+	return change;
 }

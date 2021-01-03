@@ -50,8 +50,8 @@ void http::http_client::get(const char *host, const char *port, const char *targ
 }
 bool http::http_client::post(const char *host, const char *port, const char *target, std::vector<http::data_block> data, const char *token, std::string &resp_text)
 {
-	std::cout << "POST has been disabled" << std::endl;
-	return true;
+	/*std::cout << "POST has been disabled" << std::endl;
+	return true;*/
 	boost::system::error_code err;
 	net::io_context ioc;
 	tcp::resolver resolve(ioc);
