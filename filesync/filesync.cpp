@@ -7,9 +7,7 @@
 #include "db_manager.h"
 #include <nlohmann/json.hpp>
 #include <assert.h>
-
 #include <regex>
-#include <monitor.h>
 using namespace nlohmann;
 namespace filesync
 {
@@ -89,8 +87,7 @@ int main()
 		filesync::FileSync *filesync = new filesync::FileSync{"/"};
 		filesync::connect(filesync);
 		filesync->check_sync_path();
-		filesync::monitor::MONITOR monitor(&filesync::FileSync::monitor_cb, filesync, filesync->conf.sync_path);
-		monitor.watch();
+		filesync->monitor->watch();
 		filesync->db.init(filesync->conf.db_path.c_str());
 		filesync->get_all_server_files();
 		bool process_monitor = false;
@@ -555,6 +552,8 @@ start:
 	}
 	root_path = common::strncpy(conf.sync_path.c_str());
 	this->corret_path_sepatator(root_path);
+	assert(this->monitor == NULL);
+	this->monitor = new common::monitor::win_monitor(&filesync::FileSync::monitor_cb, this, this->conf.sync_path);
 }
 bool filesync::FileSync::get_file_changes()
 {
@@ -613,15 +612,18 @@ filesync::FileSync::FileSync(char *server_location)
 	this->server_location = server_location;
 	this->db = filesync::db_manager{};
 	this->committer = new ChangeCommitter(*this);
+	this->monitor = NULL;
 	this->corret_path_sepatator(this->server_location);
 }
 filesync::FileSync::~FileSync()
 {
 	delete (this->committer);
-	this->committer = NULL;
-
 	delete (this->server_location);
+	delete (this->monitor);
+
+	this->committer = NULL;
 	this->server_location = NULL;
+	this->monitor = NULL;
 
 	for (auto i : this->files_map)
 	{
@@ -742,7 +744,7 @@ void filesync::throw_exception(std::string err)
 	auto str = common::string_format("EXCEPTION:%s", err.c_str());
 	EXCEPTION(str);
 }
-void filesync::FileSync::monitor_cb(filesync::monitor::change *c, void *obj)
+void filesync::FileSync::monitor_cb(common::monitor::change *c, void *obj)
 {
 	auto filesync = (filesync::FileSync *)obj;
 	auto path = "/" + c->path;
@@ -750,12 +752,12 @@ void filesync::FileSync::monitor_cb(filesync::monitor::change *c, void *obj)
 	std::cout << "Entered the callback:" << path << std::endl;
 	filesync->add_local_file_change(c);
 }
-void filesync::FileSync::add_local_file_change(filesync::monitor::change *change)
+void filesync::FileSync::add_local_file_change(common::monitor::change *change)
 {
 	std::lock_guard<std::mutex> guard(_local_file_changes_mutex);
 	this->_local_file_changes.push(change);
 }
-filesync::monitor::change *filesync::FileSync::get_local_file_change()
+common::monitor::change *filesync::FileSync::get_local_file_change()
 {
 	std::lock_guard<std::mutex> guard(_local_file_changes_mutex);
 	if (this->_local_file_changes.empty())
