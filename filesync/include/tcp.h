@@ -1,4 +1,5 @@
 #include <boost/asio.hpp>
+#include <boost/beast.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/system/system_error.hpp>
@@ -14,6 +15,7 @@
 #include <chrono>
 using namespace nlohmann;
 using namespace boost::asio;
+namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace filesync
 {
 	struct message_header

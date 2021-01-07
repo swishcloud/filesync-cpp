@@ -335,12 +335,16 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 bool filesync::FileSync::upload_file(std::ifstream &fs, const char *md5, long size)
 {
 	std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
-	std::string res;
-	if (!filesync::http_get(this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(), res))
+	char *token = filesync::get_token();
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	c.GET();
+	delete (token);
+	if (!c.error.empty())
+
 	{
 		return false;
 	}
-	auto j = json::parse(res.c_str());
+	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	auto data = j["data"];
 	if (!err.is_null())
@@ -372,16 +376,15 @@ bool filesync::FileSync::upload_file(std::ifstream &fs, const char *md5, long si
 bool filesync::FileSync::download_file(File &file)
 {
 	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", url_encode(file.server_path.c_str()).c_str(), file.commit_id.c_str());
-	std::string res;
-	if (!filesync::http_get(this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(), res))
+	char *token = filesync::get_token();
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	c.GET();
+	delete (token);
+	if (!c.error.empty())
 	{
 		return false;
 	}
-	else
-	{
-		//std::cout << res << std::endl;
-	}
-	auto j = json::parse(res.c_str());
+	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	auto data = j["data"];
 	if (!err.is_null())
@@ -410,15 +413,13 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(const char *pat
 	std::vector<filesync::File> files;
 	std::string res;
 	std::unique_ptr<char> token{get_token()};
-	if (!filesync::http_get(this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get(), res))
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
+	c.GET();
+	if (!c.error.empty())
 	{
 		EXCEPTION("http get failed");
 	}
-	else
-	{
-		//std::cout << res << std::endl;
-	}
-	auto j = json::parse(res.c_str());
+	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	if (!err.is_null())
 	{
@@ -559,17 +560,16 @@ bool filesync::FileSync::get_file_changes()
 {
 start:
 	std::string url_path = common::string_format("/api/commit/changes?commit_id=%s", this->conf.commit_id.c_str());
-	std::string res;
-	char *token = get_token();
-	auto ok = filesync::http_get(this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token, res);
+	char *token = filesync::get_token();
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	c.GET();
 	delete (token);
-	token = NULL;
-	if (!ok)
+	if (!c.error.empty())
 	{
-		std::cout << "HTTP GET changes failed" << std::endl;
+		std::cout << "HTTP GET changes failed with error:" << c.error << std::endl;
 		return false;
 	}
-	auto j = json::parse(res.c_str());
+	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	auto data = j["data"];
 	if (!err.is_null())

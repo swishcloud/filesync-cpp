@@ -2,6 +2,8 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/version.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl/error.hpp>
@@ -18,8 +20,7 @@ namespace ssl = net::ssl;			// from <boost/asio/ssl.hpp>
 using tcp = net::ip::tcp;			// from <boost/asio/ip/tcp.hpp>
 namespace filesync
 {
-	bool http_get(const char *host, const char *port, const char *target, const char *token, std::string &resp_text);
-}
+} // namespace filesync
 
 namespace http
 {
@@ -49,8 +50,41 @@ namespace http
 	{
 	public:
 		http_client();
-		void get(const char *host, const char *port, const char *target);
 		bool post(const char *host, const char *port, const char *target, std::vector<http::data_block> data, const char *token, std::string &resp_text);
 	};
 } // namespace http
 std::string url_encode(const char *str);
+namespace common
+{
+	class http_client
+	{
+
+	public:
+		http_client(std::string host, std::string port, std::string target, std::string token);
+		~http_client() noexcept(false);
+
+		void GET();
+		void POST(std::vector<http::data_block> data);
+		std::string resp_text;
+		std::string error;
+
+	private:
+		HANDLE handle;
+		std::string host;
+		std::string port;
+		std::string target;
+		std::string token;
+		std::unique_ptr<beast::ssl_stream<beast::tcp_stream>> stream;
+		boost_http::request<boost_http::string_body> req;
+		beast::flat_buffer buffer;
+		boost_http::response<boost_http::dynamic_body> res;
+		net::io_context ioc;
+
+		void connect();
+		void handshake();
+
+		void send_request();
+
+		void receive_response(std::size_t length);
+	};
+} // namespace common

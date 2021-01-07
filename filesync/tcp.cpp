@@ -103,6 +103,7 @@ void filesync::connect(FileSync *filesync)
 		io_context my_io_context{};
 		ip::tcp::socket *socket = new ip::tcp::socket{my_io_context};
 		boost::system::error_code err;
+		//beast::get_lowest_layer(*socket).expire_after(std::chrono::seconds(10));
 		socket->connect(resolve(filesync->cfg.server_ip, filesync->cfg.server_tcp_port), err);
 		if (err.failed())
 		{
