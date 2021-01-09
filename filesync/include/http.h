@@ -69,7 +69,6 @@ namespace common
 		std::string error;
 
 	private:
-		HANDLE handle;
 		std::string host;
 		std::string port;
 		std::string target;

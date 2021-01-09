@@ -19,6 +19,7 @@ set(BOOST_LIB
 "${BOOST_LIB_DIR}/libboost_locale.a"
 "${BOOST_LIB_DIR}/libboost_regex.a"
 "${BOOST_LIB_DIR}/libboost_thread.a"
+${CMAKE_CURRENT_SOURCE_DIR}/lib/sqlite3.a
 -pthread
 -ldl
 -lstdc++fs
@@ -29,10 +30,11 @@ set(BOOST_LIB
 "${BOOST_LIB_DIR}/libboost_date_time-vc142-mt-gd-x64-1_74.lib"
 "${BOOST_LIB_DIR}/libboost_locale-vc142-mt-gd-x64-1_74.lib"
 "${BOOST_LIB_DIR}/libboost_regex-vc142-mt-gd-x64-1_74.lib"
-"${BOOST_LIB_DIR}/libboost_thread-vc142-mt-gd-x64-1_74.lib")
+"${BOOST_LIB_DIR}/libboost_thread-vc142-mt-gd-x64-1_74.lib"
+${CMAKE_CURRENT_SOURCE_DIR}/lib/sqlite3.lib)
 endif()
 message(BOOST_LIB>${BOOST_LIB})
-target_link_libraries(filesync PRIVATE ${COMMON_LIBRARY} C:/workspace/repos/filesync-cpp/filesync/lib/sqlite3.lib
+target_link_libraries(filesync PRIVATE ${COMMON_LIBRARY}
 ${BOOST_LIB}
 ${OPENSLL_libssl}
 ${OPENSLL_libcrypto}

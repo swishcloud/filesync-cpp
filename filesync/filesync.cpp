@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <assert.h>
 #include <regex>
+#include <sys/inotify.h>
 using namespace nlohmann;
 namespace filesync
 {
@@ -62,6 +63,7 @@ namespace filesync
 		return common::strncpy(m[0].str().c_str());
 	}
 } // namespace filesync
+
 int main()
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
@@ -87,7 +89,6 @@ int main()
 		filesync::FileSync *filesync = new filesync::FileSync{"/"};
 		filesync::connect(filesync);
 		filesync->check_sync_path();
-		filesync->monitor->watch();
 		filesync->db.init(filesync->conf.db_path.c_str());
 		filesync->get_all_server_files();
 		bool process_monitor = false;
@@ -138,7 +139,7 @@ int main()
 			if (!procoss_monitor_failed)
 				filesync->committer->commit();
 			std::cout << "-----end syncing" << std::endl;
-			Sleep(1000 * 5);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		}
 		delete (filesync);
 	}
@@ -229,16 +230,12 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 		if (std::filesystem::is_directory(path))
 		{
 			std::vector<std::string> files_cstr;
-			auto count = common::find_files(path, files_cstr);
-			if (count == -1)
-			{
-				errs.push_back("finding files failed.");
-				return false;
-			}
+			common::find_files(path, files_cstr);
 			for (std::string v : files_cstr)
 			{
 				std::string p = common::string_format("%s/%s", path, v.c_str());
-				this->sync_local_added_or_modified(filesync::format_path(p).c_str());
+				auto relative_p = get_relative_path_by_fulllpath(filesync::format_path(p).c_str());
+				this->sync_local_added_or_modified(relative_p);
 			}
 
 			if (file_db->count == 0)
@@ -554,7 +551,13 @@ start:
 	root_path = common::strncpy(conf.sync_path.c_str());
 	this->corret_path_sepatator(root_path);
 	assert(this->monitor == NULL);
-	this->monitor = new common::monitor::win_monitor(&filesync::FileSync::monitor_cb, this, this->conf.sync_path);
+#ifdef __linux__
+	this->monitor = new common::monitor::linux_monitor();
+#else
+	this->monitor = new common::monitor::win_monitor(this->conf.sync_path);
+#endif
+	monitor->watch(this->conf.sync_path);
+	monitor->read_async(&filesync::FileSync::monitor_cb, this);
 }
 bool filesync::FileSync::get_file_changes()
 {
@@ -656,7 +659,7 @@ char *filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
 	int len = strlen(root_path), result_path_len = strlen(path) - len;
 	if (result_path_len == 0)
 	{
-		return new char[]{'/', '\0'};
+		return new char[2]{'/', '\0'};
 	}
 	char *buf = new char[result_path_len + 1];
 	if (memcmp(path, root_path, len) == 0)
