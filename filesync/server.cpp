@@ -66,7 +66,7 @@ namespace common
 } // namespace common
 namespace filesync
 {
-    server::server(short port, std::string file_location, common::http_client &http_client) : port{port}, acceptor_{io_context, tcp::endpoint(boost::asio::ip::address::from_string("0.0.0.0"), port)}, file_location{file_location}, http_client{http_client}
+    server::server(short port, std::string file_location, common::http_client &http_client) :ip{"0.0.0.0"}, port{port}, acceptor_{io_context, tcp::endpoint(boost::asio::ip::address::from_string(ip), port)}, file_location{file_location}, http_client{http_client}
     {
     }
 
@@ -333,6 +333,7 @@ namespace filesync
     void server::listen()
     {
         this->thread.reset(new std::thread([this]() {
+            filesync::print_info(common::string_format("server listening on %s:%d",this->ip.c_str(),this->port));
             do_accept();
             this->io_context.run();
             std::cout << "server listening thread exited" << std::endl;
@@ -363,7 +364,7 @@ namespace filesync
     }
     bool session::is_closed()
     {
-        return this->has_closed || !this->socket.is_open();
+        return  this->has_closed || !this->socket.is_open();
     }
     template <typename OnReadSize>
     void session::async_read_size(OnReadSize &&onReadSize)
@@ -608,20 +609,22 @@ namespace filesync
         work = boost::asio::any_io_executor();
         this->thread->join();
     }
-    void tcp_client::connect()
+    bool tcp_client::connect()
     {
-        std::promise<void> promise;
-        std::future<void> future = promise.get_future();
+        filesync::print_info(common::string_format("tcp connecting %s:%s",this->server_host.c_str(),this->server_port.c_str()));
+        std::promise<bool> promise;
+        std::future<bool> future = promise.get_future();
         this->thread.reset(new std::thread([this, &promise]() {
+            try
+            {
+            
             boost::asio::io_context io_context;
-            work = boost::asio::require(io_context.get_executor(),
-                                        boost::asio::execution::outstanding_work.tracked);
             tcp::socket s(io_context);
             tcp::resolver resolver(io_context);
             boost::asio::connect(s, resolver.resolve(server_host, server_port));
             filesync::print_info("connected succeed");
             this->session_.reset(new session{std::move(s)});
-            promise.set_value();
+            promise.set_value(true);
             // this->session_->read_message([](filesync::message msg) {
 
             // });
@@ -634,11 +637,19 @@ namespace filesync
                 filesync::print_info(common::string_format("syncing file %s", f.c_str()));
                 this->send_file(f);
             }*/
+            work = boost::asio::require(io_context.get_executor(),
+                                        boost::asio::execution::outstanding_work.tracked);
             io_context.run();
             this->session_.release();
+            this->session_=NULL;
+            }
+            catch(const std::exception& e)
+            {
+            filesync::print_debug(e.what());promise.set_value(false);
+            }
             filesync::print_debug("client connecting thread exited.");
         }));
-        future.get();
+       return future.get();
     }
     void tcp_client::send_file(std::string path, size_t offset)
     {

@@ -160,6 +160,7 @@ namespace filesync
     private:
         //private data
         common::http_client &http_client;
+        std::string ip;
         short port;
         boost::asio::io_context io_context;
         tcp::acceptor acceptor_;
@@ -191,7 +192,7 @@ namespace filesync
         std::unique_ptr<session> session_;
         tcp_client(std::string server_host, std::string server_port);
         ~tcp_client();
-        void connect();
+        bool connect();
         void send_file(std::string path, size_t offset = 0);
     };
 } // namespace filesync

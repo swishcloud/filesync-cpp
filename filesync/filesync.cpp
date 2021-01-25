@@ -89,12 +89,22 @@ int main(int argc, char *argv[])
 	{
 		filesync::print_debug(argv[i]);
 	}
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
 	if (argc > 1)
 	{
 		if (std::string(argv[1]) == "listen")
 		{
-			//filesync::server server{4000, "/filesync"};
-			//server.listen();
+			if(argc<3){
+				filesync::print_info(common::string_format("missing a paramter for server files location"));
+return 1;
+			}
+	common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
+			#ifdef __linux__
+	filesync::server server{4000,argv[2], http_client};
+#else
+	filesync::server server{4000, argv[2], http_client};
+#endif
+	server.listen();
 			while (getchar())
 			{
 				/* code */
@@ -116,15 +126,6 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
-
-	common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
-#ifdef __linux__
-	filesync::server server{4000, "/filesync", http_client};
-#else
-	filesync::server server{4000, "c:/filesync", http_client};
-#endif
-	server.listen();
 	try
 	{
 		filesync->connect();
@@ -136,7 +137,10 @@ int main(int argc, char *argv[])
 		while (1)
 		{
 			std::cout << "-----begin syncing" << std::endl;
-			filesync->clear_errs();
+			if (!filesync->clear_errs())
+			{
+				continue;
+			}
 			if (!filesync->get_file_changes())
 			{
 				continue;
@@ -163,7 +167,11 @@ int main(int argc, char *argv[])
 					{
 						procoss_monitor_failed = true;
 					}
+					if(procoss_monitor_failed){ 
+						filesync->add_local_file_change(local_change);
+					}else{
 					delete (local_change);
+					}
 				}
 			}
 			else
@@ -198,7 +206,8 @@ void filesync::FileSync::connect()
 	{
 		delete tcp_client;
 		tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
-		tcp_client->connect();
+		if(!tcp_client->connect())
+		throw common::exception("connect server failed");
 
 		//connect web server
 		common::socket::message msg;
@@ -227,7 +236,8 @@ void filesync::FileSync::connect()
 		//create the tcp client
 		delete tcp_client;
 		tcp_client = new filesync::tcp_client{"localhost", "4000"};
-		tcp_client->connect();
+		if(!tcp_client->connect())
+		throw common::exception("connect server failed");
 	}
 	catch (const std::exception &e)
 	{
@@ -494,15 +504,16 @@ bool filesync::FileSync::upload_file_v2(const char *ip, unsigned short port, std
 {
 	return false;
 }
-void filesync::FileSync::clear_errs()
+bool filesync::FileSync::clear_errs()
 {
 	this->errs.clear();
-	if (this->tcp_client->session_->is_closed())
+	if (this->tcp_client->session_==NULL)
 	{
 		delete this->tcp_client;
 		this->tcp_client = new filesync::tcp_client{"localhost", "4000"};
-		this->tcp_client->connect();
+		return this->tcp_client->connect();
 	}
+	return true;
 }
 bool filesync::FileSync::download_file(File &file)
 {

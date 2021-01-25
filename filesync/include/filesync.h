@@ -105,7 +105,7 @@ public:
 	File server_file(std::string server_path, std::string commit_id, bool is_directory);
 	void add_local_file_change(common::monitor::change *change);
 	common::monitor::change *get_local_file_change();
-	void clear_errs();
+	bool clear_errs();
 };
 struct filesync::File
 {
