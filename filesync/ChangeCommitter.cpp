@@ -23,7 +23,7 @@ filesync::ChangeCommitter *filesync::ChangeCommitter::add_delete_by_path_action(
 	this->delete_by_path_actions.push_back(std::move(action));
 	return this;
 }
-void filesync::ChangeCommitter::commit()
+bool filesync::ChangeCommitter::commit()
 {
 	//limite 100 actions
 	const int max_action_number = 50;
@@ -59,25 +59,31 @@ void filesync::ChangeCommitter::commit()
 		j_delete_arr.push_back(action.to_json());
 		n++;
 	}
-
-	http::http_client http_client;
 	std::vector<http::data_block> post_data;
 	post_data.push_back({"directory_actions", j_directories_arr.dump().c_str()});
 	post_data.push_back({"file_actions", j_file_arr.dump().c_str()});
 	post_data.push_back({"delete_by_path_actions", j_delete_arr.dump().c_str()});
 	std::string resp;
-	char *token = filesync::get_token();
-	if (this->create_directory_actions.size() + this->create_file_actions.size() + this->delete_by_path_actions.size() > 0 && http_client.post(this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", post_data, token, resp))
+	if (this->create_directory_actions.size() + this->create_file_actions.size() + this->delete_by_path_actions.size() > 0)
 	{
-		json result = json::parse(resp);
-		if (!result["error"].is_null())
+		char *token = filesync::get_token();
+		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token};
+		c.POST(post_data);
+		delete[] token;
+		if (!c.error.empty())
+
 		{
-			std::cout << "error posting files to server:" << result["error"] << std::endl;
+			return false;
+		}
+		auto j = json::parse(c.resp_text);
+		if (!j["error"].is_null())
+		{
+			std::cout << "error posting files to server:" << j["error"] << std::endl;
 		}
 	}
-	delete (token);
 
 	this->create_directory_actions.clear();
 	this->create_file_actions.clear();
 	this->delete_by_path_actions.clear();
+	return true;
 }

@@ -8,7 +8,8 @@
 #include <nlohmann/json.hpp>
 #include <assert.h>
 #include <regex>
-#include <sys/inotify.h>
+#include <server.h>
+#include "boost/algorithm/string.hpp"
 using namespace nlohmann;
 namespace filesync
 {
@@ -60,11 +61,11 @@ namespace filesync
 		std::cmatch m{};
 		std::regex reg{"[^/\\\\]*$"};
 		assert(std::regex_search(path, m, reg));
-		return common::strncpy(m[0].str().c_str());
+		return common::strcpy(m[0].str().c_str());
 	}
 } // namespace filesync
 
-int main()
+int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
 	std::cout << "LC_ALL: " << setlocale(LC_ALL, NULL) << std::endl;
@@ -84,17 +85,58 @@ int main()
 		exit(1);
 	}
 #endif
+	for (int i = 0; i < argc; i++)
+	{
+		filesync::print_debug(argv[i]);
+	}
+	if (argc > 1)
+	{
+		if (std::string(argv[1]) == "listen")
+		{
+			//filesync::server server{4000, "/filesync"};
+			//server.listen();
+			while (getchar())
+			{
+				/* code */
+			}
+		}
+		else if (std::string(argv[1]) == "sync")
+		{
+			if (argc < 3)
+			{
+				filesync::print_info("missing the sync path.");
+				return 1;
+			}
+			filesync::print_info(common::string_format("syncing all files within folder %s", argv[2]));
+			filesync::tcp_client tcp_client{"192.168.1.1", "4000"};
+			tcp_client.connect();
+			while (getchar())
+			{
+				/* code */
+			}
+		}
+	}
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+
+	common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
+#ifdef __linux__
+	filesync::server server{4000, "/filesync", http_client};
+#else
+	filesync::server server{4000, "c:/filesync", http_client};
+#endif
+	server.listen();
 	try
 	{
-		filesync::FileSync *filesync = new filesync::FileSync{"/"};
-		filesync::connect(filesync);
+		filesync->connect();
 		filesync->check_sync_path();
 		filesync->db.init(filesync->conf.db_path.c_str());
-		filesync->get_all_server_files();
+		while (!filesync->get_all_server_files())
+			;
 		bool process_monitor = false;
 		while (1)
 		{
 			std::cout << "-----begin syncing" << std::endl;
+			filesync->clear_errs();
 			if (!filesync->get_file_changes())
 			{
 				continue;
@@ -109,6 +151,7 @@ int main()
 			{
 				while (auto local_change = filesync->get_local_file_change())
 				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					local_change->path;
 					std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
 
@@ -141,13 +184,59 @@ int main()
 			std::cout << "-----end syncing" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		}
-		delete (filesync);
 	}
 	catch (const std::exception &ex)
 	{
 		std::cout << ex.what() << "";
 	}
+	delete (filesync);
 	return 0;
+}
+void filesync::FileSync::connect()
+{
+	try
+	{
+		delete tcp_client;
+		tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
+		tcp_client->connect();
+
+		//connect web server
+		common::socket::message msg;
+		msg.msg_type = static_cast<int>(MsgType::Download_File);
+		char *token = get_token();
+		msg.addHeader({"token", token});
+		delete[](token);
+		this->tcp_client->session_->send_message(msg);
+		auto reply = this->tcp_client->session_->read_message();
+
+		if (reply.msg_type == 0)
+		{
+			throw common::exception("connection failed");
+		}
+		conf.max_commit_id = reply.getHeaderValue<std::string>("max_commit_id");
+		conf.first_commit_id = reply.getHeaderValue<std::string>("first_commit_id");
+		conf.partition_id = reply.getHeaderValue<std::string>("partition_id");
+
+		cfg.save();
+		conf.init(cfg.debug_mode);
+		if (!std::filesystem::exists(conf.db_path))
+		{
+			conf.commit_id.clear();
+		}
+
+		//create the tcp client
+		delete tcp_client;
+		tcp_client = new filesync::tcp_client{"localhost", "4000"};
+		tcp_client->connect();
+	}
+	catch (const std::exception &e)
+	{
+		std::cout << e.what() << std::endl;
+		int delay = 10000;
+		std::cout << "reconnect in " << delay / 1000 << "s" << std::endl;
+		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+		connect();
+	}
 }
 bool filesync::FileSync::sync_server()
 {
@@ -157,7 +246,8 @@ bool filesync::FileSync::sync_server()
 		return true;
 	}
 	std::vector<std::string> errs;
-	auto files = this->db.get_files();
+	auto u_files = this->db.get_files();
+	auto files = u_files.get();
 	for (int i = 0; i < files->count; i++)
 	{
 		const char *file_name = files->get_value("name", i);
@@ -166,8 +256,8 @@ bool filesync::FileSync::sync_server()
 		const char *is_deleted_str = files->get_value("is_deleted", i);
 		const char *commit_id = files->get_value("commit_id", i);
 		bool is_deleted = is_deleted_str[0] == '1';
-		auto full_path = get_full_path(file_name);
-		std::cout << "sync_server>" << full_path << std::endl;
+		std::unique_ptr<char[]> full_path{get_full_path(file_name)};
+		std::cout << "sync_server>" << full_path.get() << std::endl;
 
 		//struct File object
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
@@ -176,10 +266,10 @@ bool filesync::FileSync::sync_server()
 		if (is_deleted)
 		{
 			std::error_code err;
-			if (std::filesystem::remove_all(full_path, err) == -1)
+			if (std::filesystem::remove_all(full_path.get(), err) == -1)
 			{ //return 0 if full_path not exists, return -1 on error.
 				std::cout << err.message() << std::endl;
-				std::string err = common::string_format("Failed to remove file:%s", full_path);
+				std::string err = common::string_format("Failed to remove file:%s", full_path.get());
 				std::cout << err << std::endl;
 				errs.push_back(err);
 			}
@@ -195,7 +285,7 @@ bool filesync::FileSync::sync_server()
 		{
 			if (!compare_md5(DIRECTORY_MD5, local_md5))
 			{
-				if (!std::filesystem::exists(full_path))
+				if (!std::filesystem::exists(full_path.get()))
 					assert(std::filesystem::create_directories(f.full_path));
 				this->db.update_local_md5(f.server_path.c_str(), DIRECTORY_MD5);
 			}
@@ -214,13 +304,11 @@ bool filesync::FileSync::sync_server()
 			}
 		}
 	}
-	delete (files);
-	this->need_sync_server = false;
+	this->need_sync_server = errs.size() != 0;
 	return errs.size() == 0;
 }
 bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 {
-	std::vector<std::string> errs;
 	auto relative_path = this->get_relative_path_by_fulllpath(path);
 	auto file_db = db.get_file(relative_path);
 	//filesync::format_path(path);
@@ -233,16 +321,14 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			common::find_files(path, files_cstr);
 			for (std::string v : files_cstr)
 			{
-				std::string p = common::string_format("%s/%s", path, v.c_str());
-				auto relative_p = get_relative_path_by_fulllpath(filesync::format_path(p).c_str());
-				this->sync_local_added_or_modified(relative_p);
+				this->sync_local_added_or_modified(filesync::format_path(v.c_str()).c_str());
 			}
 
-			if (file_db->count == 0)
+			if (file_db.get()->count == 0)
 			{
 				filesync::create_directory_action action;
 				action.is_hidden = false;
-				action.path = common::strncpy(relative_path);
+				action.path = common::strcpy(relative_path);
 				this->committer->add_create_directory_action(action);
 			}
 		}
@@ -252,7 +338,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			{
 				std::string md5;
 				bool need_upload = false;
-				if (file_db->count == 0)
+				if (file_db.get()->count == 0)
 				{ //this is a added local file to be upload.
 					md5 = file_md5(path);
 					need_upload = true;
@@ -260,24 +346,30 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				else
 				{
 					md5 = file_md5(path);
-					if (!compare_md5(md5.c_str(), file_db->get_value("local_md5")))
+					if (!compare_md5(md5.c_str(), file_db.get()->get_value("local_md5")))
 					{ //this file has been modified locally.
 						need_upload = true;
 					}
 				}
+
 				if (need_upload)
 				{
 					auto file_size = std::filesystem::file_size(path);
-					std::ifstream fs{path, std::ios_base::binary};
-					auto r = this->upload_file(fs, md5.c_str(), file_size);
+					auto r = this->upload_file(path, md5.c_str(), file_size);
 					std::cout << "UPLOAD " << (r ? "OK" : "Failed") << " :" << path << std::endl;
-
-					create_file_action action;
-					action.is_hidden = false;
-					action.location = common::strncpy(get_parent_dir(relative_path).c_str());
-					action.md5 = common::strncpy(md5.c_str());
-					action.name = file_name(relative_path);
-					this->committer->add_create_file_action(action);
+					if (r)
+					{
+						create_file_action action;
+						action.is_hidden = false;
+						action.location = common::strcpy(get_parent_dir(relative_path).c_str());
+						action.md5 = common::strcpy(md5.c_str());
+						action.name = file_name(relative_path);
+						this->committer->add_create_file_action(action);
+					}
+					else
+					{
+						errs.push_back(common::string_format("failed to upload %s", path));
+					}
 				}
 			}
 			catch (const std::exception &e)
@@ -288,21 +380,24 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			}
 		}
 	}
-	delete (relative_path);
-	delete (file_db);
+	delete[](relative_path);
 	return errs.size() == 0;
 }
 bool filesync::FileSync::sync_local_deleted(const char *path)
 {
+	std::unique_ptr<filesync::sqlite_query_result> u_files;
 	filesync::sqlite_query_result *files;
 	if (path == NULL)
 	{
-		files = this->db.get_files();
+		u_files = this->db.get_files();
+		files = u_files.get();
 	}
 	else
 	{
 		auto relative_path = this->get_relative_path_by_fulllpath(path);
-		files = this->db.get_file(relative_path);
+		u_files = this->db.get_file(relative_path);
+		delete[] relative_path;
+		files = u_files.get();
 	}
 
 	for (int i = 0; i < files->count; i++)
@@ -319,23 +414,22 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		if (!std::filesystem::exists(full_path))
 		{ //this file has been deleted locally.
 			delete_by_path_action action;
-			action.commit_id = common::strncpy(commit_id);
+			action.commit_id = common::strcpy(commit_id);
 			action.file_type = is_directory ? 2 : 1;
-			action.path = common::strncpy(file_name);
+			action.path = common::strcpy(file_name);
 			this->committer->add_delete_by_path_action(action);
 		}
-		delete (full_path);
+		delete[](full_path);
 	}
-	delete (files);
 	return true;
 }
-bool filesync::FileSync::upload_file(std::ifstream &fs, const char *md5, long size)
+bool filesync::FileSync::upload_file(std::string full_path, const char *md5, long size)
 {
 	std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
 	char *token = filesync::get_token();
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
 	c.GET();
-	delete (token);
+	delete[](token);
 	if (!c.error.empty())
 
 	{
@@ -367,16 +461,56 @@ bool filesync::FileSync::upload_file(std::ifstream &fs, const char *md5, long si
 				  << "the file has already uploaded,skiping uploading." << std::endl;
 		return true;
 	}
-	filesync::upload_file(ip.c_str(), std::stoi(port), fs, path.c_str(), md5, std::stoi(file_size), std::stoi(uploaded_size), server_file_id.c_str());
-	return true;
+
+	common::socket::message msg;
+	msg.msg_type = static_cast<int>(MsgType::UploadFile);
+	msg.addHeader({"path", path});
+	msg.addHeader({"md5", md5});
+	msg.addHeader({"file_size", (size_t)std::stoi(file_size)});
+	msg.addHeader({"uploaded_size", (size_t)std::stoi(uploaded_size)});
+	msg.addHeader({"server_file_id", server_file_id});
+	token = filesync::get_token();
+	msg.addHeader({TokenHeaderKey, token});
+	delete[](token);
+	msg.body_size = std::stoi(file_size) - std::stoi(uploaded_size);
+	if (!this->tcp_client->session_->send_message(msg))
+	{
+		filesync::print_info(common::string_format("failed to send message"));
+		return false;
+	}
+	this->tcp_client->session_->send_file(full_path, std::stoi(uploaded_size));
+	auto reply = this->tcp_client->session_->read_message();
+	if (reply.msg_type == static_cast<int>(filesync::MsgType::Reply))
+	{
+		return true;
+	}
+	else
+	{
+		filesync::print_info(common::string_format("Failed to upload %s", full_path.c_str()));
+		return false;
+	}
+}
+bool filesync::FileSync::upload_file_v2(const char *ip, unsigned short port, std::ifstream &fs, const char *path, const char *md5, long file_size, long uploaded_size, const char *server_file_id)
+{
+	return false;
+}
+void filesync::FileSync::clear_errs()
+{
+	this->errs.clear();
+	if (this->tcp_client->session_->is_closed())
+	{
+		delete this->tcp_client;
+		this->tcp_client = new filesync::tcp_client{"localhost", "4000"};
+		this->tcp_client->connect();
+	}
 }
 bool filesync::FileSync::download_file(File &file)
 {
 	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", url_encode(file.server_path.c_str()).c_str(), file.commit_id.c_str());
 	char *token = filesync::get_token();
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
 	c.GET();
-	delete (token);
+	delete[](token);
 	if (!c.error.empty())
 	{
 		return false;
@@ -394,43 +528,112 @@ bool filesync::FileSync::download_file(File &file)
 	auto s_path = data["Path"];
 	auto md5 = data["Md5"];
 	auto db_file = this->db.get_file(file.server_path.c_str());
-	assert(db_file->count > 0);
-	auto is_downloaded = filesync::download_file(ip.get<std::string>().c_str(), port, s_path.get<std::string>().c_str(), db_file->get_value("md5"), db_file->get_value("local_md5"), file);
+	assert(db_file.get()->count > 0);
+	bool is_downloaded = false;
+
+	common::socket::message msg;
+	msg.msg_type = static_cast<int>(MsgType::Download_File);
+	msg.addHeader({"path", s_path.get<std::string>()});
+	token = filesync::get_token();
+	msg.addHeader({TokenHeaderKey, token});
+	delete[](token);
+	this->tcp_client->session_->send_message(msg);
+	auto reply = this->tcp_client->session_->read_message();
+	if (!reply)
+	{
+		return false;
+	}
+	std::promise<bool> promise;
+	std::future<bool> future = promise.get_future();
+	std::string tmp_path = (std::filesystem::temp_directory_path() / trim_trailing_space(md5.get<std::string>())).string();
+	std::ofstream os{tmp_path, std::ios_base::binary};
+	if (os.bad())
+	{
+		filesync::print_info(common::string_format("failed to create a file named %s", tmp_path.c_str()));
+		return false;
+	}
+	filesync::print_info(common::string_format("Downloading file %s", file.server_path.c_str()));
+	this->tcp_client->session_->async_read_chunk(reply.body_size, [&promise, tmp_path, this, &os, md5, &file](int len, std::string error, bool finished) {
+		if (!error.empty())
+		{
+			filesync::print_info(common::string_format("failed to download file %s", file.server_path.c_str()));
+			promise.set_value(false);
+			return;
+		}
+		os.write(this->tcp_client->session_->buf.get(), len);
+		if (os.bad())
+		{
+			filesync::print_info(common::string_format("failed to download file %s", file.server_path.c_str()));
+			promise.set_value(false);
+			return;
+		}
+		if (finished)
+		{
+			os.close();
+			if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+			{
+				filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it...", file.server_path.c_str()));
+				if (!std::filesystem::remove(tmp_path))
+				{
+					filesync::print_info(common::string_format("WARNING!failed to delete the temp file %s", tmp_path.c_str()));
+				}
+				promise.set_value(false);
+				return;
+			}
+			try
+			{
+				std::filesystem::rename(tmp_path, file.full_path);
+				promise.set_value(true);
+			}
+			catch (std::filesystem::filesystem_error &e)
+			{
+				filesync::print_info(common::string_format("failed to rename the file with error:%s", e.what()));
+				promise.set_value(false);
+			}
+		}
+	});
+	is_downloaded = future.get();
+	//auto is_downloaded = filesync::download_file(ip.get<std::string>().c_str(), port, s_path.get<std::string>().c_str(), db_file.get()->get_value("md5"), db_file.get()->get_value("local_md5"), file);
 	if (is_downloaded)
 	{
-		std::cout << "downloaded file:" << file.full_path << " " << std::endl;
+		filesync::print_info(common::string_format("downloaded file:%s", file.full_path.c_str()));
 		this->db.update_local_md5(file.server_path.c_str(), md5.get<std::string>().c_str());
 	}
-	delete (db_file);
 	return is_downloaded;
 }
-std::vector<filesync::File> filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id)
+std::vector<filesync::File> filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok)
 {
-	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
 	std::vector<filesync::File> files;
-	std::string res;
-	std::unique_ptr<char> token{get_token()};
+	std::cout << path << std::endl;
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+
+	std::unique_ptr<char[]> token{get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
-	c.GET();
-	if (!c.error.empty())
+	do
 	{
-		EXCEPTION("http get failed");
-	}
+		c.GET();
+	} while (!c.error.empty());
 	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	if (!err.is_null())
 	{
 		std::cout << err << std::endl;
+		*ok = false;
 		return files;
 	}
 	auto data = j["data"];
 	for (auto item : data)
 	{
 		std::string file_server_path = common::string_format("%s%s%s", path, strcmp(path, "/") == 0 ? "" : "/", item["name"].get<std::string>().c_str());
-		auto f = this->server_file(file_server_path, item["commit_id"], strcmp(item["type"].get<std::string>().c_str(), "2") == 0);
+		filesync::File f;
+		f = this->server_file(file_server_path, item["commit_id"], strcmp(item["type"].get<std::string>().c_str(), "2") == 0);
 		if (f.is_directory)
 		{
-			this->get_server_files(f.relative_path.c_str(), f.commit_id.c_str(), max_commit_id);
+			this->get_server_files(f.relative_path.c_str(), f.commit_id.c_str(), max_commit_id, ok);
+			if (!ok)
+			{
+				return files;
+			}
 		}
 		std::string md5{};
 		if (!f.is_directory)
@@ -440,19 +643,25 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(const char *pat
 		print_info(common::string_format("server file:%s", f.server_path.c_str()));
 		this->db.add_file(f.server_path.c_str(), md5.c_str(), f.commit_id.c_str());
 	}
+	*ok = true;
 	return files;
 }
-void filesync::FileSync::get_all_server_files()
+bool filesync::FileSync::get_all_server_files()
 {
+	this->need_sync_server = true;
 	if (this->conf.commit_id.empty())
 	{
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
-		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str());
+		bool ok = false;
+		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str(), &ok);
 		this->conf.commit_id = this->conf.max_commit_id;
-		this->need_sync_server = true;
 		this->conf.save();
+		return ok;
 	}
-	this->need_sync_server = false;
+	else
+	{
+		return true;
+	}
 }
 void filesync::FileSync::save_change(json change, const char *commit_id)
 {
@@ -460,7 +669,7 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	int change_type = change["ChangeType"].get<int>();
 	std::string path = change["Path"].get<std::string>();
 	/*//Skip if the change path is not under the syncing server location
-	if (strcmp(this->server_location, path.substr(0, strlen(this->server_location)).c_str())!=0) {
+	if (strcmp(this-/home/bigyasuo/Desktop/test_sync>server_location, path.substr(0, strlen(this->server_location)).c_str())!=0) {
 		std::cout<<"file change outside the syncing server location:"<<path<<std::endl;
 		return;
 	}*/
@@ -548,7 +757,7 @@ start:
 		this->conf.sync_path = typed;
 		this->conf.save();
 	}
-	root_path = common::strncpy(conf.sync_path.c_str());
+	root_path = common::strcpy(conf.sync_path.c_str());
 	this->corret_path_sepatator(root_path);
 	assert(this->monitor == NULL);
 #ifdef __linux__
@@ -564,12 +773,12 @@ bool filesync::FileSync::get_file_changes()
 start:
 	std::string url_path = common::string_format("/api/commit/changes?commit_id=%s", this->conf.commit_id.c_str());
 	char *token = filesync::get_token();
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(get_token())};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(token)};
 	c.GET();
-	delete (token);
+	delete[](token);
 	if (!c.error.empty())
 	{
-		std::cout << "HTTP GET changes failed with error:" << c.error << std::endl;
+		print_info("http get failed");
 		return false;
 	}
 	auto j = json::parse(c.resp_text);
@@ -577,7 +786,7 @@ start:
 	auto data = j["data"];
 	if (!err.is_null())
 	{
-		std::cout << "Error:" << err << std::endl;
+		print_info(common::string_format("%s", err.get<std::string>().c_str()));
 		return false;
 	}
 	if (data.is_null())
@@ -616,13 +825,15 @@ filesync::FileSync::FileSync(char *server_location)
 	this->db = filesync::db_manager{};
 	this->committer = new ChangeCommitter(*this);
 	this->monitor = NULL;
+	this->tcp_client = NULL;
 	this->corret_path_sepatator(this->server_location);
 }
 filesync::FileSync::~FileSync()
 {
 	delete (this->committer);
-	delete (this->server_location);
+	delete[](this->server_location);
 	delete (this->monitor);
+	delete this->tcp_client;
 
 	this->committer = NULL;
 	this->server_location = NULL;
@@ -630,7 +841,12 @@ filesync::FileSync::~FileSync()
 
 	for (auto i : this->files_map)
 	{
-		delete (i.first);
+		delete[](i.first);
+	}
+
+	while (auto local_change = this->get_local_file_change())
+	{
+		delete (local_change);
 	}
 }
 
@@ -670,7 +886,7 @@ char *filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
 	}
 	else
 	{
-		delete (buf);
+		delete[](buf);
 		return NULL;
 	}
 }
@@ -687,11 +903,19 @@ char *filesync::FileSync::get_relative_path(const char *server_path)
 {
 	if (strlen(this->server_location) == 1)
 	{
-		return common::strncpy(server_path);
+		return common::strcpy(server_path);
 	}
 	auto r = server_path + strlen(this->server_location);
-	char *result = common::strncpy(r);
-	return result[0] == '\0' ? common::strncpy("/") : result;
+	char *result = common::strcpy(r);
+	if (result[0] == '\0')
+	{
+		delete[](result);
+		return common::strcpy("/");
+	}
+	else
+	{
+		return result;
+	}
 }
 std::filesystem::path filesync::FileSync::relative_to_server_path(const char *relative_path)
 {
@@ -699,15 +923,16 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(const char *re
 }
 char *filesync::get_token()
 {
-	//return new char[]{"temp_token_str"};
-	system("filesync_old login");
+#ifdef __linux__
+	system("filesync_old login --insecure");
+#endif
 	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
 	if (!f)
 	{
 		EXCEPTION("the token file does not exist");
 	}
 	int size = 1000;
-	char *buf = new char[((long)size) + 1];
+	char *buf = new char[((long)size)];
 	char *res = fgets(buf, size, f);
 	if (!res)
 	{
@@ -729,9 +954,13 @@ filesync::File filesync::FileSync::local_file(std::string full_path, bool is_dir
 filesync::File filesync::FileSync::server_file(std::string server_path, std::string commit_id, bool is_directory)
 {
 	auto f = filesync::File();
-	f.full_path = this->get_full_path(server_path.c_str());
+	auto full_path = this->get_full_path(server_path.c_str());
+	f.full_path = full_path;
+	delete[] full_path;
 	f.is_directory = is_directory;
-	f.relative_path = this->get_relative_path_by_fulllpath(f.full_path.c_str());
+	auto relative_path = this->get_relative_path_by_fulllpath(f.full_path.c_str());
+	f.relative_path = relative_path;
+	delete[] relative_path;
 	f.server_path = server_path;
 	f.commit_id = commit_id;
 
@@ -750,9 +979,8 @@ void filesync::throw_exception(std::string err)
 void filesync::FileSync::monitor_cb(common::monitor::change *c, void *obj)
 {
 	auto filesync = (filesync::FileSync *)obj;
-	auto path = "/" + c->path;
-	std::replace(path.begin(), path.end(), '\\', '/');
-	std::cout << "Entered the callback:" << path << std::endl;
+	std::replace(c->path.begin(), c->path.end(), '\\', '/');
+	std::cout << "Entered the callback:" << c->path << std::endl;
 	filesync->add_local_file_change(c);
 }
 void filesync::FileSync::add_local_file_change(common::monitor::change *change)

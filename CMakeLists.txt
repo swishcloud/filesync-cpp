@@ -2,7 +2,7 @@
 # and include sub-projects here.
 #
 project(filesync_solution)
-add_compile_options(-D__USE_W32_SOCKETS -D_WIN32_WINNT=0x0601)
+add_compile_options(-D__USE_W32_SOCKETS -D_WIN32_WINNT=0x0601 -I/opt/boost)
 cmake_minimum_required (VERSION 3.8)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

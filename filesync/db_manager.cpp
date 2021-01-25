@@ -8,12 +8,17 @@
 #include <assert.h>
 #include <regex>
 using namespace nlohmann;
-filesync::db_manager::db_manager()
+filesync::db_manager::db_manager() : db_file_name{NULL}, db{NULL}
 {
+}
+filesync::db_manager::~db_manager()
+{
+	delete[](this->db_file_name);
+	//delete (this->db);free(): invalid pointer
 }
 int filesync::db_manager::sqlite_callback(void *result, int n, char **value, char **column)
 {
-	filesync::sqlite_callback_result *result_p = (filesync::sqlite_callback_result *)result;
+	/* filesync::sqlite_callback_result *result_p = (filesync::sqlite_callback_result *)result;
 	if (result_p->column == NULL)
 	{
 		result_p->column = new char *[n];
@@ -31,10 +36,10 @@ int filesync::db_manager::sqlite_callback(void *result, int n, char **value, cha
 	}
 	result_p->value.push_back(value_copy);
 	result_p->count++;
-	result_p->column_count = n;
+	result_p->column_count = n; */
 	return 0;
 }
-filesync::sqlite_query_result *filesync::db_manager::sqlite3_query(sqlite3_stmt *stmt)
+std::unique_ptr<filesync::sqlite_query_result> filesync::db_manager::sqlite3_query(sqlite3_stmt *stmt)
 {
 	filesync::sqlite_query_result *result = new filesync::sqlite_query_result(stmt);
 	while (1)
@@ -60,7 +65,7 @@ filesync::sqlite_query_result *filesync::db_manager::sqlite3_query(sqlite3_stmt 
 			for (int i = 0; i < result->column_count; i++)
 			{
 				auto v = sqlite3_column_text(stmt, i);
-				row[i] = common::strncpy((char *)v);
+				row[i] = common::strcpy((const char *)v);
 			}
 			result->value.push_back(row);
 		}
@@ -69,9 +74,9 @@ filesync::sqlite_query_result *filesync::db_manager::sqlite3_query(sqlite3_stmt 
 			filesync::EXCEPTION(sqlite3_errmsg(this->db));
 		}
 	}
-	return result;
+	return std::unique_ptr<filesync::sqlite_query_result>(result);
 }
-filesync::sqlite_query_result *filesync::db_manager::get_file(const char *filename, bool count_deleted)
+std::unique_ptr<filesync::sqlite_query_result> filesync::db_manager::get_file(const char *filename, bool count_deleted)
 {
 	std::string sql = common::string_format("select * from file where name=?%s", count_deleted ? "" : " and is_deleted=0");
 	sqlite3_stmt *stmt;
@@ -79,16 +84,16 @@ filesync::sqlite_query_result *filesync::db_manager::get_file(const char *filena
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_bind_text(stmt, 1, filename, strlen(filename), NULL);
 	assert(rc == SQLITE_OK);
-	sqlite_query_result *result = sqlite3_query(stmt);
-	assert(result);
-	if (result && result->count > 1)
+	auto result = sqlite3_query(stmt);
+	assert(result.get());
+	if (result.get()->count > 1)
 	{
 		//std::cout << "duplicated records found,deleting..." << std::endl;
 		filesync::EXCEPTION("duplicated records found,deleting...");
 	}
 	return result;
 }
-filesync::sqlite_query_result *filesync::db_manager::fuzzily_query(const char *filename)
+std::unique_ptr<filesync::sqlite_query_result> filesync::db_manager::fuzzily_query(const char *filename)
 {
 	auto fuzzy = common::string_format("%s/%%", filename);
 	const char *sql = "select * from file where name=? or name like ?";
@@ -99,18 +104,18 @@ filesync::sqlite_query_result *filesync::db_manager::fuzzily_query(const char *f
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_bind_text(stmt, 2, fuzzy.c_str(), strlen(fuzzy.c_str()), NULL);
 	assert(rc == SQLITE_OK);
-	sqlite_query_result *result = sqlite3_query(stmt);
-	assert(result);
+	auto result = sqlite3_query(stmt);
+	assert(result.get());
 	return result;
 }
-filesync::sqlite_query_result *filesync::db_manager::get_files()
+std::unique_ptr<filesync::sqlite_query_result> filesync::db_manager::get_files()
 {
 	std::string sql = "select * from file";
 	sqlite3_stmt *stmt;
 	int rc = sqlite3_prepare_v2(db, sql.c_str(), sql.size(), &stmt, NULL);
 	assert(rc == SQLITE_OK);
-	sqlite_query_result *result = sqlite3_query(stmt);
-	assert(result);
+	auto result = sqlite3_query(stmt);
+	assert(result.get());
 	return result;
 }
 bool filesync::db_manager::move(const char *source_path, const char *dest_path, const char *id)
@@ -125,7 +130,6 @@ bool filesync::db_manager::move(const char *source_path, const char *dest_path, 
 		auto dest = common::string_format("%s%s", dest_path, file_name + strlen(source_path));
 		add_file(dest.c_str(), md5, id);
 	}
-	delete (r);
 	return true;
 }
 bool filesync::db_manager::add_file(const char *filename, const char *md5, const char *id)
@@ -334,7 +338,7 @@ bool filesync::db_manager::closedb()
 
 void filesync::db_manager::init(const char *db_path)
 {
-	this->db_file_name = common::strncpy(db_path);
+	this->db_file_name = common::strcpy(db_path);
 	if (std::filesystem::exists(this->db_file_name))
 	{
 		this->opendb();
@@ -403,11 +407,15 @@ filesync::sqlite_query_result::~sqlite_query_result()
 		char **value = this->value[i];
 		for (int j = 0; j < this->column_count; j++)
 		{
-			delete (value[j]);
+			delete[](value[j]);
 		}
-		delete (value);
+		delete[](value);
 	}
-	delete (this->column);
+	/*for (int i = 0; i < this->column_count; i++)
+	{
+		delete[](this->column[i]);
+	}*/
+	delete[](this->column);
 	assert(sqlite3_finalize(stmt) == SQLITE_OK);
 }
 
@@ -433,9 +441,9 @@ filesync::create_file_action::create_file_action()
 }
 filesync::create_file_action::~create_file_action()
 {
-	delete (this->location);
-	delete (this->md5);
-	delete (this->name);
+	delete[](this->location);
+	delete[](this->md5);
+	delete[](this->name);
 
 	this->location = NULL;
 	this->md5 = NULL;
@@ -458,7 +466,7 @@ filesync::create_directory_action::create_directory_action()
 }
 filesync::create_directory_action::~create_directory_action()
 {
-	delete (this->path);
+	delete[](this->path);
 
 	this->path = NULL;
 }
@@ -484,8 +492,8 @@ filesync::delete_by_path_action::delete_by_path_action(delete_by_path_action &&a
 }
 filesync::delete_by_path_action::~delete_by_path_action()
 {
-	delete (this->commit_id);
-	delete (this->path);
+	delete[](this->commit_id);
+	delete[](this->path);
 
 	this->commit_id = NULL;
 	this->file_type = 0;

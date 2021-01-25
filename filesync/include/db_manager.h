@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 #include <nlohmann/json.hpp>
 #include <filesystem>
+#include <memory>
 using json = nlohmann::json;
 namespace filesync
 {
@@ -52,11 +53,12 @@ class filesync::db_manager
 {
 public:
 	db_manager();
+	~db_manager();
 	static int sqlite_callback(void *, int n, char **value, char **column);
-	filesync::sqlite_query_result *sqlite3_query(sqlite3_stmt *stmt);
-	filesync::sqlite_query_result *get_file(const char *filename, bool count_deleted = false);
-	filesync::sqlite_query_result *fuzzily_query(const char *filename);
-	filesync::sqlite_query_result *get_files();
+	std::unique_ptr<filesync::sqlite_query_result> sqlite3_query(sqlite3_stmt *stmt);
+	std::unique_ptr<filesync::sqlite_query_result> get_file(const char *filename, bool count_deleted = false);
+	std::unique_ptr<filesync::sqlite_query_result> fuzzily_query(const char *filename);
+	std::unique_ptr<filesync::sqlite_query_result> get_files();
 	bool move(const char *source_path, const char *dest_path, const char *commit_id);
 	bool add_file(const char *filename, const char *md5, const char *id);
 	bool delete_file(const char *filename);
@@ -73,8 +75,7 @@ public:
 
 private:
 	char *db_file_name;
-	sqlite3 *db{};
-	char *zErrMsg{};
+	sqlite3 *db;
 };
 class filesync::sqlite_callback_result
 {

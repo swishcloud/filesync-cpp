@@ -5,6 +5,12 @@ filesync::CONFIG::~CONFIG()
 }
 filesync::CONFIG::CONFIG()
 {
+	char *tmp = getenv("development");
+	debug_mode = tmp && strcmp(tmp, "true") == 0;
+	if (debug_mode)
+	{
+		filesync::print_info("debug mode on");
+	}
 	load();
 }
 void filesync::CONFIG::load()
@@ -20,18 +26,11 @@ void filesync::CONFIG::load()
 		this->server_port = j["server_port"].is_null() ? 0 : j["server_port"].get<int>();
 		this->server_tcp_port = j["server_tcp_port"].is_null() ? 0 : j["server_tcp_port"].get<int>();
 	}
-
-	if (this->server_ip.empty())
+	else
 	{
 		this->server_ip = "192.168.29.4";
-	}
-	if (this->server_port == 0)
-	{
 		this->server_port = 2002;
-	}
-	if (this->server_tcp_port == 0)
-	{
-		this->server_tcp_port = 2003;
+		this->server_tcp_port = 8081;
 	}
 
 	save();
@@ -64,7 +63,7 @@ void filesync::CONFIG::save()
 }
 std::filesystem::path filesync::CONFIG::path()
 {
-	auto path = std::filesystem::path(datapath).append("cfg");
+	auto path = std::filesystem::path(datapath).append(this->debug_mode ? "cfg_debug" : "cfg");
 	auto parent = filesync::get_parent_dir(path.string().c_str());
 	if (!std::filesystem::exists(parent))
 	{
@@ -73,9 +72,9 @@ std::filesystem::path filesync::CONFIG::path()
 	return path;
 }
 
-void filesync::PartitionConf::init()
+void filesync::PartitionConf::init(bool debug_mode)
 {
-	std::string partition_folder_name = common::string_format("partition_%s", partition_id.c_str());
+	std::string partition_folder_name = common::string_format("partition_%s%s", debug_mode ? "debug_" : "", partition_id.c_str());
 	auto folder_path = std::filesystem::path(datapath).append(partition_folder_name);
 	std::filesystem::create_directories(folder_path);
 

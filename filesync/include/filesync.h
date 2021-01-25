@@ -17,6 +17,7 @@
 #include <monitor.h>
 #include <queue>
 #include <mutex>
+#include <server.h>
 // TODO: Reference additional headers your program requires here.
 #define TOKEN_FILE_PATH "token"
 namespace filesync
@@ -71,22 +72,26 @@ private:
 	char *get_relative_path(const char *server_path);
 	char *get_relative_path_by_fulllpath(const char *path);
 	std::filesystem::path relative_to_server_path(const char *relative_path);
-	bool upload_file(std::ifstream &fs, const char *md5, long size);
+	bool upload_file(std::string full_path, const char *md5, long size);
+	bool upload_file_v2(const char *ip, unsigned short port, std::ifstream &fs, const char *path, const char *md5, long file_size, long uploaded_size, const char *server_file_id);
 	std::mutex _local_file_changes_mutex;
 	std::queue<common::monitor::change *> _local_file_changes;
+	std::vector<std::string> errs;
 
 public:
 	static void monitor_cb(common::monitor::change *c, void *obj);
 	common::monitor::MONITOR *monitor;
 	filesync::PartitionConf conf;
 	filesync::db_manager db;
+	filesync::tcp_client *tcp_client;
 	CONFIG cfg;
 	ChangeCommitter *committer;
 	FileSync(char *server_location);
 	~FileSync();
+	void connect();
 	bool download_file(File &file);
-	std::vector<File> get_server_files(const char *path, const char *commit_id, const char *max_commit_id);
-	void get_all_server_files();
+	std::vector<File> get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok);
+	bool get_all_server_files();
 	std::vector<filesync::File> files;
 	std::unordered_map<const char *, int, hasher, keyeq> files_map;
 	void check_sync_path();
@@ -100,6 +105,7 @@ public:
 	File server_file(std::string server_path, std::string commit_id, bool is_directory);
 	void add_local_file_change(common::monitor::change *change);
 	common::monitor::change *get_local_file_change();
+	void clear_errs();
 };
 struct filesync::File
 {

@@ -1,3 +1,5 @@
+#ifndef HTTP_H
+#define HTTP_H
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
@@ -40,6 +42,14 @@ namespace http
 	public:
 		const char *str();
 	};
+
+	class UrlValues
+	{
+	private:
+	public:
+		std::string str;
+		void add(std::string name, value value);
+	};
 	struct data_block
 	{
 		const char *name;
@@ -61,10 +71,14 @@ namespace common
 
 	public:
 		http_client(std::string host, std::string port, std::string target, std::string token);
+		http_client(std::string host, int port);
 		~http_client() noexcept(false);
 
 		void GET();
+		void GET(std::string target, std::string parameters, std::string token);
 		void POST(std::vector<http::data_block> data);
+		void POST(std::string target, std::string parameters, std::string token);
+		void PUT(std::string target, std::string parameters, std::string token);
 		std::string resp_text;
 		std::string error;
 
@@ -87,3 +101,4 @@ namespace common
 		void receive_response(std::size_t length);
 	};
 } // namespace common
+#endif

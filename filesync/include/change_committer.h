@@ -23,7 +23,7 @@ namespace filesync
 		ChangeCommitter *add_create_directory_action(create_directory_action &action);
 		ChangeCommitter *add_create_file_action(create_file_action &action);
 		ChangeCommitter *add_delete_by_path_action(delete_by_path_action &action);
-		void commit();
+		bool commit();
 	};
 
 } // namespace filesync

@@ -1,17 +1,20 @@
 #include <internal.h>
+#include <mutex>
 namespace filesync
 {
+    std::mutex print_mtx;
     void print_debug(std::string str)
     {
+        std::lock_guard<std::mutex> guard(print_mtx);
         auto level = "DEBUG";
         std::cout << common::string_format("%s>%s", level, str.c_str()) << std::endl;
     }
     void print_info(std::string str)
     {
+        std::lock_guard<std::mutex> guard(print_mtx);
         auto level = "INFO";
         std::cout << common::string_format("%s>%s", level, str.c_str()) << std::endl;
     }
-
     const char *exception::what() const noexcept
     {
         return this->err.c_str();
@@ -28,7 +31,6 @@ namespace filesync
         e.err = "PLATFORM_NOT_SUPPORTED";
         throw e;
     }
-
     char *exec_cmd(const char *command, char **err)
     {
         char *err_str = NULL;
@@ -45,9 +47,9 @@ namespace filesync
 #endif
         if (!pipe)
         {
-            err_str = "popen failed!";
-            if (err != NULL)
-                *err = err_str;
+            err_str = common::strcpy("popen failed!");
+            *err = err_str;
+            delete result;
             return NULL;
         }
         while (fgets(buffer, buffer_size, pipe) != NULL)
@@ -97,13 +99,18 @@ namespace filesync
         if (!std::regex_search(cmd_resut, m, reg))
         {
             auto e_str = common::string_format("getting uuid failed.%s", cmd_resut);
-            delete (err);
-            delete (cmd_resut);
+            delete[](err);
+            delete[](cmd_resut);
             EXCEPTION(e_str);
         }
         std::string md5 = m[1].str();
-        delete (err);
-        delete (cmd_resut);
+        delete[](err);
+        delete[](cmd_resut);
         return md5;
+    }
+    size_t file_size(std::string path)
+    {
+        std::ifstream fs{path, std::ios_base::binary | std::ios_base::ate};
+        return fs.tellg();
     }
 } // namespace filesync

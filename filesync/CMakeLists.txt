@@ -7,7 +7,7 @@ find_package(openssl REQUIRED)
 set(CMAKE_PREFIX_PATH "C:/workspace/repos/json/out/install/x64-Debug (default)")
 find_package(nlohmann_json 3.2.0 REQUIRED)
 # Add source to this project's executable.
-add_executable (filesync "filesync.cpp" "include/filesync.h" "db_manager.cpp"  "include/db_manager.h" "http.cpp" "include/http.h" "tcp.cpp" "include/tcp.h" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp")
+add_executable (filesync "filesync.cpp" "db_manager.cpp" "http.cpp" "tcp.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp")
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 message(------------BOOST DIRECTORY:${BOOST_LIB_DIR})
@@ -40,7 +40,7 @@ ${OPENSLL_libssl}
 ${OPENSLL_libcrypto}
 nlohmann_json::nlohmann_json
 common::common)
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}\\include" ${COMMON_INCLUDE} ${BOOST_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR}/include)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include" ${COMMON_INCLUDE} ${BOOST_INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR}/include)
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 add_custom_target(ThidPartyBinaries
 COMMENT ("copying binaries")

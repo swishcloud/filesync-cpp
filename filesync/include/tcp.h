@@ -1,3 +1,5 @@
+#ifndef TCP_H
+#define TCP_H
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <boost/asio/connect.hpp>
@@ -21,15 +23,27 @@ namespace filesync
 	struct message_header
 	{
 	private:
-		std::string name;
 		std::string str_v;
 		int int_v;
 		int t;
 
 	public:
+		std::string name;
 		message_header(std::string name, std::string v);
 		message_header(std::string name, int v);
 		void fill_json(json &j);
+		template <class T>
+		T getValue() const
+		{
+			if (std::is_same<T, int>::value)
+			{
+				return static_cast<T>(*(T *)(&this->int_v));
+			}
+			else
+			{
+				return static_cast<T>(*(T *)(&this->str_v));
+			}
+		}
 	};
 	class message
 	{
@@ -37,10 +51,26 @@ namespace filesync
 		std::vector<message_header> headers{};
 
 	public:
+		//message();
+		//message(message &&msg);
 		int msg_type;
 		long body_size;
-		char *to_json();
+		char *to_json() const;
+		static message parse(std::string json);
 		void addHeader(message_header value);
+
+		template <typename T>
+		T getHeaderValue(std::string name) const
+		{
+			for (auto &h : this->headers)
+			{
+				if (strcmp(h.name.c_str(), name.c_str()) == 0)
+				{
+					return h.getValue<T>();
+				}
+			}
+			return 0;
+		}
 	};
 	class downloader
 	{
@@ -79,3 +109,4 @@ namespace filesync
 /*
 
 				outfile.write(buf, socket->read_some(buffer(buf, buf_size)));*/
+#endif

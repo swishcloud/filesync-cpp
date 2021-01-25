@@ -20,6 +20,7 @@ namespace filesync
 		std::string server_ip;
 		int server_port;
 		int server_tcp_port;
+		bool debug_mode;
 		CONFIG();
 		CONFIG(const CONFIG &) = delete;
 		~CONFIG();
@@ -37,7 +38,7 @@ namespace filesync
 		std::string db_path;
 		std::string partition_cfg_path;
 		std::string sync_path;
-		void init();
+		void init(bool debug_mode);
 		void save();
 	};
 } // namespace filesync

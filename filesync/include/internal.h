@@ -1,13 +1,15 @@
 #ifndef INTERNAL_H
 #define INTERNAL_H
-#include <iostream>
+#include <fstream>
 #include <common.h>
 #include <regex>
+#include <nlohmann/json.hpp>
 #ifdef __linux__
 #define linux_os true
 #else
 #define linux_os false
 #endif
+using namespace nlohmann;
 namespace filesync
 {
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";
@@ -22,6 +24,7 @@ namespace filesync
     void throw_exception(std::string err);
     void print_info(std::string str);
     void print_debug(std::string str);
+    size_t file_size(std::string path);
     class exception : public std::exception
     {
     public:
