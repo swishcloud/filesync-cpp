@@ -94,15 +94,15 @@ int main(int argc, char *argv[])
 	{
 		if (std::string(argv[1]) == "listen")
 		{
-			if(argc<3){
-				filesync::print_info(common::string_format("missing a paramter for server files location"));
+			if(argc<4){
+				filesync::print_info(common::string_format("missing a paramter for server listening port, or a paramter for server files location"));
 return 1;
 			}
 	common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
 			#ifdef __linux__
-	filesync::server server{4000,argv[2], http_client};
+	filesync::server server{std::stoi(argv[2]),argv[3], http_client};
 #else
-	filesync::server server{4000, argv[2], http_client};
+	filesync::server server{std::stoi(argv[2]), argv[3], http_client};
 #endif
 	server.listen();
 			while (getchar())
