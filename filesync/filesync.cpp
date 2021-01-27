@@ -542,6 +542,9 @@ bool filesync::FileSync::download_file(File &file)
 	assert(db_file.get()->count > 0);
 	bool is_downloaded = false;
 
+	if(compare_md5(md5.get<std::string>().c_str(),filesync::file_md5(file.full_path.c_str()).c_str())){
+		is_downloaded=true;
+	}else{
 	common::socket::message msg;
 	msg.msg_type = static_cast<int>(MsgType::Download_File);
 	msg.addHeader({"path", s_path.get<std::string>()});
@@ -563,9 +566,6 @@ bool filesync::FileSync::download_file(File &file)
 		filesync::print_info(common::string_format("failed to create a file named %s", tmp_path.c_str()));
 		return false;
 	}
-	if(compare_md5(md5.get<std::string>().c_str(),filesync::file_md5(file.full_path.c_str()).c_str())){
-		is_downloaded=true;
-	}else{
 	filesync::print_info(common::string_format("Downloading file %s", file.server_path.c_str()));
 	this->tcp_client->session_->async_read_chunk(reply.body_size, [&promise, tmp_path, this, &os, md5, &file](int len, std::string error, bool finished) {
 		if (!error.empty())
