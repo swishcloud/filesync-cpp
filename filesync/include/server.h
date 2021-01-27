@@ -109,7 +109,6 @@ namespace filesync
         ~session();
         //session(session &&s);
         bool has_closed;
-        bool is_closed();
         template <typename OnReadSize>
         void async_read_size(OnReadSize &&onReadSize);
         template <typename OnReadChunk>

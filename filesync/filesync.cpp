@@ -118,7 +118,7 @@ return 1;
 				return 1;
 			}
 			filesync::print_info(common::string_format("syncing all files within folder %s", argv[2]));
-			filesync::tcp_client tcp_client{"192.168.1.1", "4000"};
+			filesync::tcp_client tcp_client{"192.168.1.1", "8008"};
 			tcp_client.connect();
 			while (getchar())
 			{
@@ -235,7 +235,7 @@ void filesync::FileSync::connect()
 
 		//create the tcp client
 		delete tcp_client;
-		tcp_client = new filesync::tcp_client{"localhost", "4000"};
+		tcp_client = new filesync::tcp_client{"localhost", "8008"};
 		if(!tcp_client->connect())
 		throw common::exception("connect server failed");
 	}
@@ -336,10 +336,10 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 
 			if (file_db.get()->count == 0)
 			{
-				filesync::create_directory_action action;
-				action.is_hidden = false;
-				action.path = common::strcpy(relative_path);
-				this->committer->add_create_directory_action(action);
+				filesync::create_directory_action *action=new filesync::create_directory_action();
+				action->is_hidden = false;
+				action->path = common::strcpy(relative_path);
+				this->committer->add_action(action);
 			}
 		}
 		else
@@ -369,12 +369,12 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					std::cout << "UPLOAD " << (r ? "OK" : "Failed") << " :" << path << std::endl;
 					if (r)
 					{
-						create_file_action action;
-						action.is_hidden = false;
-						action.location = common::strcpy(get_parent_dir(relative_path).c_str());
-						action.md5 = common::strcpy(md5.c_str());
-						action.name = file_name(relative_path);
-						this->committer->add_create_file_action(action);
+						create_file_action *action=new create_file_action();
+						action->is_hidden = false;
+						action->location = common::strcpy(get_parent_dir(relative_path).c_str());
+						action->md5 = common::strcpy(md5.c_str());
+						action->name = file_name(relative_path);
+						this->committer->add_action(action);
 					}
 					else
 					{
@@ -423,11 +423,11 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 
 		if (!std::filesystem::exists(full_path))
 		{ //this file has been deleted locally.
-			delete_by_path_action action;
-			action.commit_id = common::strcpy(commit_id);
-			action.file_type = is_directory ? 2 : 1;
-			action.path = common::strcpy(file_name);
-			this->committer->add_delete_by_path_action(action);
+			delete_by_path_action *action=new delete_by_path_action();
+			action->commit_id = common::strcpy(commit_id);
+			action->file_type = is_directory ? 2 : 1;
+			action->path = common::strcpy(file_name);
+			this->committer->add_action(action);
 		}
 		delete[](full_path);
 	}
@@ -510,7 +510,7 @@ bool filesync::FileSync::clear_errs()
 	if (this->tcp_client->session_==NULL)
 	{
 		delete this->tcp_client;
-		this->tcp_client = new filesync::tcp_client{"localhost", "4000"};
+		this->tcp_client = new filesync::tcp_client{"localhost", "8008"};
 		return this->tcp_client->connect();
 	}
 	return true;
@@ -563,6 +563,9 @@ bool filesync::FileSync::download_file(File &file)
 		filesync::print_info(common::string_format("failed to create a file named %s", tmp_path.c_str()));
 		return false;
 	}
+	if(compare_md5(md5.get<std::string>().c_str(),filesync::file_md5(file.full_path.c_str()).c_str())){
+		is_downloaded=true;
+	}else{
 	filesync::print_info(common::string_format("Downloading file %s", file.server_path.c_str()));
 	this->tcp_client->session_->async_read_chunk(reply.body_size, [&promise, tmp_path, this, &os, md5, &file](int len, std::string error, bool finished) {
 		if (!error.empty())
@@ -604,7 +607,7 @@ bool filesync::FileSync::download_file(File &file)
 		}
 	});
 	is_downloaded = future.get();
-	//auto is_downloaded = filesync::download_file(ip.get<std::string>().c_str(), port, s_path.get<std::string>().c_str(), db_file.get()->get_value("md5"), db_file.get()->get_value("local_md5"), file);
+	}
 	if (is_downloaded)
 	{
 		filesync::print_info(common::string_format("downloaded file:%s", file.full_path.c_str()));

@@ -80,8 +80,8 @@ namespace filesync
                 if (!ec)
                 {
                     filesync::print_info("accepted a new tcp connection.");
-                    sessions.push_back(new session{std::move(socket)});
-                    receive(sessions.back());
+                    session *s=new session{std::move(socket)};
+                    receive(s);
                 }
                 else
                 {
@@ -328,6 +328,10 @@ namespace filesync
                 filesync::print_debug(error);
                 s->close();
             }
+            if(s->has_closed){
+                filesync::print_info("releasing a session");
+                delete s;
+            }
         });
     }
     void server::listen()
@@ -360,11 +364,7 @@ namespace filesync
     }*/
     session::~session()
     {
-        this->close();
-    }
-    bool session::is_closed()
-    {
-        return  this->has_closed || !this->socket.is_open();
+        //this->close();
     }
     template <typename OnReadSize>
     void session::async_read_size(OnReadSize &&onReadSize)

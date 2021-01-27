@@ -8,63 +8,42 @@ filesync::ChangeCommitter::ChangeCommitter(FileSync &fs) : fs{fs}
 filesync::ChangeCommitter::~ChangeCommitter()
 {
 }
-filesync::ChangeCommitter *filesync::ChangeCommitter::add_create_directory_action(create_directory_action &action)
+filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(action_base *action)
 {
-	this->create_directory_actions.push_back(std::move(action));
-	return this;
-}
-filesync::ChangeCommitter *filesync::ChangeCommitter::add_create_file_action(create_file_action &action)
-{
-	this->create_file_actions.push_back(std::move(action));
-	return this;
-}
-filesync::ChangeCommitter *filesync::ChangeCommitter::add_delete_by_path_action(delete_by_path_action &action)
-{
-	this->delete_by_path_actions.push_back(std::move(action));
+	this->actions.push_back(std::unique_ptr<action_base>{action});
+	if(this->actions.size()==50){
+		if(!this->commit()){
+			throw common::exception("commiting changes failed.");
+		}
+	}
 	return this;
 }
 bool filesync::ChangeCommitter::commit()
 {
-	//limite 100 actions
-	const int max_action_number = 50;
-
 	json j_directories_arr = json::array();
 	json j_file_arr = json::array();
 	json j_delete_arr = json::array();
-	int n = 0;
-	for (auto &action : this->create_directory_actions)
+	for (auto &action : this->actions)
 	{
-		if (n == max_action_number)
-		{
-			continue;
+		if(action->type==1){
+		j_file_arr.push_back(action->to_json());
+
+		}else 		if(action->type==2){
+		j_directories_arr.push_back(action->to_json());
+
+		}else 		if(action->type==3){
+		j_delete_arr.push_back(action->to_json());
+
+		}else{
+			throw new common::exception("unrecognized action type.");
 		}
-		j_directories_arr.push_back(action.to_json());
-		n++;
-	}
-	for (auto &action : this->create_file_actions)
-	{
-		if (n == max_action_number)
-		{
-			continue;
-		}
-		j_file_arr.push_back(action.to_json());
-		n++;
-	}
-	for (auto &action : this->delete_by_path_actions)
-	{
-		if (n == max_action_number)
-		{
-			continue;
-		}
-		j_delete_arr.push_back(action.to_json());
-		n++;
 	}
 	std::vector<http::data_block> post_data;
 	post_data.push_back({"directory_actions", j_directories_arr.dump().c_str()});
 	post_data.push_back({"file_actions", j_file_arr.dump().c_str()});
 	post_data.push_back({"delete_by_path_actions", j_delete_arr.dump().c_str()});
 	std::string resp;
-	if (this->create_directory_actions.size() + this->create_file_actions.size() + this->delete_by_path_actions.size() > 0)
+	if (this->actions.size() > 0)
 	{
 		char *token = filesync::get_token();
 		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token};
@@ -82,8 +61,6 @@ bool filesync::ChangeCommitter::commit()
 		}
 	}
 
-	this->create_directory_actions.clear();
-	this->create_file_actions.clear();
-	this->delete_by_path_actions.clear();
+	this->actions.clear();
 	return true;
 }

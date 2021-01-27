@@ -438,6 +438,7 @@ json filesync::create_directory_action::to_json()
 }
 filesync::create_file_action::create_file_action()
 {
+	this->type=1;
 }
 filesync::create_file_action::~create_file_action()
 {
@@ -450,7 +451,7 @@ filesync::create_file_action::~create_file_action()
 	this->name = NULL;
 	;
 }
-filesync::create_file_action::create_file_action(create_file_action &&action)
+/*filesync::create_file_action::create_file_action(create_file_action &&action)
 {
 	this->is_hidden = action.is_hidden;
 	this->location = action.location;
@@ -460,9 +461,10 @@ filesync::create_file_action::create_file_action(create_file_action &&action)
 	action.location = NULL;
 	action.md5 = NULL;
 	action.name = NULL;
-}
+}*/
 filesync::create_directory_action::create_directory_action()
 {
+	this->type=2;
 }
 filesync::create_directory_action::~create_directory_action()
 {
@@ -470,17 +472,18 @@ filesync::create_directory_action::~create_directory_action()
 
 	this->path = NULL;
 }
-filesync::create_directory_action::create_directory_action(create_directory_action &&action)
+/*filesync::create_directory_action::create_directory_action(create_directory_action &&action)
 {
 	this->is_hidden = action.is_hidden;
 	this->path = action.path;
 
 	action.path = NULL;
-}
+}*/
 filesync::delete_by_path_action::delete_by_path_action()
 {
+	this->type=3;
 }
-filesync::delete_by_path_action::delete_by_path_action(delete_by_path_action &&action)
+/*filesync::delete_by_path_action::delete_by_path_action(delete_by_path_action &&action)
 {
 	this->commit_id = action.commit_id;
 	this->file_type = action.file_type;
@@ -489,7 +492,7 @@ filesync::delete_by_path_action::delete_by_path_action(delete_by_path_action &&a
 	action.commit_id = NULL;
 	action.file_type = 0;
 	action.path = NULL;
-}
+}*/
 filesync::delete_by_path_action::~delete_by_path_action()
 {
 	delete[](this->commit_id);

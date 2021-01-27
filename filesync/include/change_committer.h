@@ -13,16 +13,12 @@ namespace filesync
 	{
 	private:
 		FileSync &fs;
-		std::vector<create_directory_action> create_directory_actions;
-		std::vector<create_file_action> create_file_actions;
-		std::vector<delete_by_path_action> delete_by_path_actions;
+		std::vector<std::unique_ptr<action_base>> actions;
 
 	public:
 		ChangeCommitter(FileSync &fs);
 		~ChangeCommitter();
-		ChangeCommitter *add_create_directory_action(create_directory_action &action);
-		ChangeCommitter *add_create_file_action(create_file_action &action);
-		ChangeCommitter *add_delete_by_path_action(delete_by_path_action &action);
+		ChangeCommitter *add_action(action_base *action);
 		bool commit();
 	};
 
