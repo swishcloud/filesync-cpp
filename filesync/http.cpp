@@ -4,7 +4,7 @@
 //#include <Shlwapi.h>
 #include <ctype.h>
 #include <filesync.h>
-#define TIMEOUT 10
+#define TIMEOUT 120
 using std::placeholders::_1;
 using std::placeholders::_2;
 #define a bad

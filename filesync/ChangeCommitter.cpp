@@ -10,8 +10,10 @@ filesync::ChangeCommitter::~ChangeCommitter()
 }
 filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(action_base *action)
 {
+	const int MAX_ACTION_LIMIT=50;
 	this->actions.push_back(std::unique_ptr<action_base>{action});
-	if(this->actions.size()==50){
+	filesync::print_info(common::string_format("pending %d/%d actions",actions.size(),MAX_ACTION_LIMIT));
+	if(this->actions.size()==MAX_ACTION_LIMIT){
 		if(!this->commit()){
 			throw common::exception("commiting changes failed.");
 		}
