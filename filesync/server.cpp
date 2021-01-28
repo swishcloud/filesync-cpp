@@ -247,9 +247,11 @@ namespace filesync
                                 receive(s);
                             });
                         }
-                        else
-                        {
-                            throw common::exception(common::string_format("Wrong MD5"));
+                        else{                        
+                             http::UrlValues values;
+                             values.add("id", server_file_id.c_str());
+                             this->http_client.POST( "/api/reset-server-file", values.str, access_token);
+                            throw common::exception(common::string_format("Wrong MD5,client need to attempt to re-upload"));
                         }
                     }
                 }
