@@ -126,12 +126,17 @@ namespace filesync
                     std::cout << common::string_format("received a file,with %d bytes", msg.body_size) << std::endl;
                     std::string md5 = filesync::file_md5(this->get_file_path(msg.getHeaderValue<std::string>("file_name")).c_str());
                     std::string expected_md5 = msg.getHeaderValue<std::string>("md5");
-                    assert(md5 == expected_md5);
+                    if (md5 != expected_md5)
+                    {
+                        filesync::print_info(common::string_format("MD5 check failed."));
+                        s->close();
+                        return;
+                    }
                     //reply
-                    auto msg = common::socket::message{};
-                    msg.msg_type = static_cast<int>(MsgType::Reply);
-                    s->async_send_message(msg, [this, s](bool ok) {
-                        assert(ok);
+                    auto reply = common::socket::message{};
+                    reply.msg_type = static_cast<int>(MsgType::Reply);
+                    s->async_send_message(reply, [this, s, msg](bool ok) {
+                        filesync::print_info(common::string_format("%s:%s", ok ? "OK" : "Failed", msg.getHeaderValue<std::string>("file_name")).c_str());
                         receive(s);
                     });
                 }
@@ -514,7 +519,11 @@ namespace filesync
         }
         int read_count = fs->gcount();
         async_write(buf, read_count, [this, fs, onSentStream](bool ok) {
-            assert(ok);
+            if (!ok)
+            {
+                onSentStream(false);
+                return;
+            }
             if (fs->rdstate() & (std::ios_base::eofbit)) //all bytes has been written
             {
                 filesync::print_info(common::string_format("sccessfully sent a stream"));

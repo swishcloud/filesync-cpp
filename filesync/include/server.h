@@ -75,7 +75,7 @@ namespace common
                         return h.getValue<T>();
                     }
                 }
-                return 0;
+                return T();
             }
         };
 
@@ -164,7 +164,7 @@ namespace filesync
         short port;
         boost::asio::io_context io_context;
         tcp::acceptor acceptor_;
-        std::vector<session*> sessions;
+        std::vector<session *> sessions;
         std::unique_ptr<std::thread> thread;
         std::string file_location;
         //private functions
