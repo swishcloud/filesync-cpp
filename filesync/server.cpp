@@ -533,7 +533,9 @@ namespace filesync
             }
             int read_count = fs.gcount();
             written += read_count;
-            assert(write(buf.get(), read_count));
+            if(!write(buf.get(), read_count)){
+                throw  common::exception("failed to send_file");
+            }
             if (fs.rdstate() & (std::ios_base::eofbit)) //all bytes has been written
             {
                 assert(written + offset == file_size);
