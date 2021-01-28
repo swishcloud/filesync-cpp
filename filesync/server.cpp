@@ -66,7 +66,7 @@ namespace common
 } // namespace common
 namespace filesync
 {
-    server::server(short port, std::string file_location, common::http_client &http_client) :ip{"0.0.0.0"}, port{port}, acceptor_{io_context, tcp::endpoint(boost::asio::ip::address::from_string(ip), port)}, file_location{file_location}, http_client{http_client}
+    server::server(short port, std::string file_location, common::http_client &http_client) : ip{"0.0.0.0"}, port{port}, acceptor_{io_context, tcp::endpoint(boost::asio::ip::address::from_string(ip), port)}, file_location{file_location}, http_client{http_client}
     {
     }
 
@@ -80,7 +80,7 @@ namespace filesync
                 if (!ec)
                 {
                     filesync::print_info("accepted a new tcp connection.");
-                    session *s=new session{std::move(socket)};
+                    session *s = new session{std::move(socket)};
                     receive(s);
                 }
                 else
@@ -172,14 +172,15 @@ namespace filesync
                 {
                     os->close();
                     //save the block record
-                    if(*written.get()>0){
-                    std::string url_path = common::string_format("/api/file-block");
-                    http::UrlValues values;
-                    values.add("server_file_id", server_file_id.c_str());
-                    values.add("name", filesync::file_name(block_path.c_str()));
-                    values.add("start", uploaded_size);
-                    values.add("end", *written.get() + uploaded_size);
-                    this->http_client.POST(url_path, values.str, access_token);
+                    if (*written.get() > 0)
+                    {
+                        std::string url_path = common::string_format("/api/file-block");
+                        http::UrlValues values;
+                        values.add("server_file_id", server_file_id.c_str());
+                        values.add("name", filesync::file_name(block_path.c_str()));
+                        values.add("start", uploaded_size);
+                        values.add("end", *written.get() + uploaded_size);
+                        this->http_client.POST(url_path, values.str, access_token);
                     }
                     if (finished)
                     {
@@ -201,25 +202,26 @@ namespace filesync
                         {
                             throw common::exception(common::string_format("error opening file %s", tmp_path.c_str()));
                         }
-                        for (int i=resp["data"].size()-1;i>=0;i--)
+                        for (int i = resp["data"].size() - 1; i >= 0; i--)
                         {
-                            auto &item= resp["data"][i];
+                            auto &item = resp["data"][i];
                             std::string block_path = this->get_block_path(item["Path"].get<std::string>());
-                            std::string start_str =item["Start"].get<std::string>();
-                            std::string end_str =item["End"].get<std::string>();
-                            if(start_str==end_str){
+                            std::string start_str = item["Start"].get<std::string>();
+                            std::string end_str = item["End"].get<std::string>();
+                            if (start_str == end_str)
+                            {
                                 continue;
                             }
                             size_t start;
-                            sscanf(start_str.c_str(),"%zu",&start);
+                            sscanf(start_str.c_str(), "%zu", &start);
                             std::ifstream block_is{block_path, std::ios_base::binary};
                             if (!block_is.is_open())
                             {
                                 throw common::exception(common::string_format("error opening file %s", block_path.c_str()));
                             }
-                             filesync::print_debug(common::string_format("set offset:%d",start));
-                            result_os.seekp(start,std::ios_base::beg);
-                            filesync::print_debug(common::string_format("offset of intermediate file:%d",result_os.tellp()));
+                            filesync::print_debug(common::string_format("set offset:%d", start));
+                            result_os.seekp(start, std::ios_base::beg);
+                            filesync::print_debug(common::string_format("offset of intermediate file:%d", result_os.tellp()));
                             result_os << block_is.rdbuf();
                             block_is.close();
                             if (result_os.bad())
@@ -247,10 +249,11 @@ namespace filesync
                                 receive(s);
                             });
                         }
-                        else{                        
-                             http::UrlValues values;
-                             values.add("id", server_file_id.c_str());
-                             this->http_client.POST( "/api/reset-server-file", values.str, access_token);
+                        else
+                        {
+                            http::UrlValues values;
+                            values.add("id", server_file_id.c_str());
+                            this->http_client.POST("/api/reset-server-file", values.str, access_token);
                             throw common::exception(common::string_format("Wrong MD5,client need to attempt to re-upload"));
                         }
                     }
@@ -343,7 +346,8 @@ namespace filesync
                 filesync::print_debug(error);
                 s->close();
             }
-            if(s->has_closed){
+            if (s->has_closed)
+            {
                 filesync::print_info("releasing a session");
                 delete s;
             }
@@ -352,7 +356,7 @@ namespace filesync
     void server::listen()
     {
         this->thread.reset(new std::thread([this]() {
-            filesync::print_info(common::string_format("server listening on %s:%d",this->ip.c_str(),this->port));
+            filesync::print_info(common::string_format("server listening on %s:%d", this->ip.c_str(), this->port));
             do_accept();
             this->io_context.run();
             std::cout << "server listening thread exited" << std::endl;
@@ -486,7 +490,7 @@ namespace filesync
                 }
                 else
                 {
-                    async_write(data + size, size - length, onWrote);
+                    async_write(data + length, size - length, onWrote);
                 }
             }
             else
@@ -524,30 +528,17 @@ namespace filesync
     }
     void session::send_file(std::string path, size_t offset)
     {
-        std::ifstream fs{path, std::ios_base::binary | std::ios_base::ate};
-        size_t file_size = fs.tellg();
-        fs.seekg(offset, std::ios_base::beg);
-        const int BUFFER_SIZE = 1024;
-        std::unique_ptr<char[]> buf{new char[BUFFER_SIZE]};
-        long written{};
-        while (1)
+        std::promise<bool> promise;
+        std::future<bool> future = promise.get_future();
+        std::shared_ptr<std::istream>
+            fs{new std::ifstream{path, std::ios_base::binary}};
+        fs->seekg(offset, std::ios_base::beg);
+        this->async_send_stream(fs, [this, &promise](bool ok) {
+            promise.set_value(ok);
+        });
+        if (!future.get())
         {
-            fs.read(buf.get(), BUFFER_SIZE);
-            if (fs.rdstate() & (std::ios_base::badbit)) //failed to read bytes
-            {
-                throw common::exception("failed to read bytes");
-            }
-            int read_count = fs.gcount();
-            written += read_count;
-            if(!write(buf.get(), read_count)){
-                throw  common::exception("failed to send_file");
-            }
-            if (fs.rdstate() & (std::ios_base::eofbit)) //all bytes has been written
-            {
-                assert(written + offset == file_size);
-                filesync::print_info(common::string_format("sccessfully sent file %s with %d bytes", path.c_str(), written));
-                break;
-            }
+            throw common::exception("failed to send_file");
         }
     }
     template <typename OnReadMsg>
@@ -629,25 +620,25 @@ namespace filesync
     }
     bool tcp_client::connect()
     {
-        filesync::print_info(common::string_format("tcp connecting %s:%s",this->server_host.c_str(),this->server_port.c_str()));
+        filesync::print_info(common::string_format("tcp connecting %s:%s", this->server_host.c_str(), this->server_port.c_str()));
         std::promise<bool> promise;
         std::future<bool> future = promise.get_future();
         this->thread.reset(new std::thread([this, &promise]() {
             try
             {
-            
-            boost::asio::io_context io_context;
-            tcp::socket s(io_context);
-            tcp::resolver resolver(io_context);
-            boost::asio::connect(s, resolver.resolve(server_host, server_port));
-            filesync::print_info("connected succeed");
-            this->session_.reset(new session{std::move(s)});
-            promise.set_value(true);
-            // this->session_->read_message([](filesync::message msg) {
 
-            // });
-            //for (int i = 0; i < 100000000; i++)
-            /*this->session_->async_send_message(common::socket::message(), [](int) {});
+                boost::asio::io_context io_context;
+                tcp::socket s(io_context);
+                tcp::resolver resolver(io_context);
+                boost::asio::connect(s, resolver.resolve(server_host, server_port));
+                filesync::print_info("connected succeed");
+                this->session_.reset(new session{std::move(s)});
+                promise.set_value(true);
+                // this->session_->read_message([](filesync::message msg) {
+
+                // });
+                //for (int i = 0; i < 100000000; i++)
+                /*this->session_->async_send_message(common::socket::message(), [](int) {});
             std::vector<std::string> files;
             common::find_files(path, files, false, 1);
             for (auto f : files)
@@ -655,19 +646,20 @@ namespace filesync
                 filesync::print_info(common::string_format("syncing file %s", f.c_str()));
                 this->send_file(f);
             }*/
-            work = boost::asio::require(io_context.get_executor(),
-                                        boost::asio::execution::outstanding_work.tracked);
-            io_context.run();
-            this->session_.release();
-            this->session_=NULL;
+                work = boost::asio::require(io_context.get_executor(),
+                                            boost::asio::execution::outstanding_work.tracked);
+                io_context.run();
+                this->session_.release();
+                this->session_ = NULL;
             }
-            catch(const std::exception& e)
+            catch (const std::exception &e)
             {
-            filesync::print_debug(e.what());promise.set_value(false);
+                filesync::print_debug(e.what());
+                promise.set_value(false);
             }
             filesync::print_debug("client connecting thread exited.");
         }));
-       return future.get();
+        return future.get();
     }
     void tcp_client::send_file(std::string path, size_t offset)
     {
