@@ -172,6 +172,7 @@ namespace filesync
                 {
                     os->close();
                     //save the block record
+                    if(*written.get()>0){
                     std::string url_path = common::string_format("/api/file-block");
                     http::UrlValues values;
                     values.add("server_file_id", server_file_id.c_str());
@@ -179,9 +180,10 @@ namespace filesync
                     values.add("start", uploaded_size);
                     values.add("end", *written.get() + uploaded_size);
                     this->http_client.POST(url_path, values.str, access_token);
+                    }
                     if (finished)
                     {
-                        //assembly file
+                        //assemble file
                         http::UrlValues values;
                         values.add("server_file_id", server_file_id.c_str());
                         this->http_client.GET("/api/file-block", values.str, access_token);
@@ -199,14 +201,21 @@ namespace filesync
                         {
                             throw common::exception(common::string_format("error opening file %s", tmp_path.c_str()));
                         }
-                        for (auto &item : resp["data"])
+                        for (int i=resp["data"].size()-1;i>=0;i--)
                         {
+                            auto &item= resp["data"][i];
                             std::string block_path = this->get_block_path(item["Path"].get<std::string>());
+                            std::string start_str =item["Start"].get<std::string>();
+                            size_t start;
+                            sscanf(start_str.c_str(),"%zu",&start);
                             std::ifstream block_is{block_path, std::ios_base::binary};
                             if (!block_is.is_open())
                             {
                                 throw common::exception(common::string_format("error opening file %s", block_path.c_str()));
                             }
+                             filesync::print_debug(common::string_format("set offset:%d",start));
+                            result_os.seekp(start,std::ios_base::beg);
+                            filesync::print_debug(common::string_format("offset of intermediate file:%d",result_os.tellp()));
                             result_os << block_is.rdbuf();
                             block_is.close();
                             if (result_os.bad())
@@ -395,7 +404,8 @@ namespace filesync
             }
             else
             {
-                std::string error = common::string_format("async_read_chunk failed:%s", ec.message().c_str());
+                this->close();
+                std::string error = common::string_format("async_read_size failed:%s", ec.message().c_str());
                 filesync::print_info(error);
                 onReadSize(0, error);
             }

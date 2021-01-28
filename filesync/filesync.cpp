@@ -507,7 +507,7 @@ bool filesync::FileSync::upload_file_v2(const char *ip, unsigned short port, std
 bool filesync::FileSync::clear_errs()
 {
 	this->errs.clear();
-	if (this->tcp_client->session_==NULL)
+	if (this->tcp_client->session_==NULL||this->tcp_client->session_->has_closed)
 	{
 		delete this->tcp_client;
 		this->tcp_client = new filesync::tcp_client{"localhost", "8008"};

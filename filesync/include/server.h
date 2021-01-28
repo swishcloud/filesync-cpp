@@ -133,6 +133,7 @@ namespace filesync
                 }
                 else
                 {
+                    this->close();
                     std::string error = common::string_format("async_read_chunk failed:%s", ec.message().c_str());
                     filesync::print_info(error);
                     onReadChunk(length, error, length == size);
