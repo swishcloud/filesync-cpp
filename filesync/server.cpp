@@ -206,6 +206,10 @@ namespace filesync
                             auto &item= resp["data"][i];
                             std::string block_path = this->get_block_path(item["Path"].get<std::string>());
                             std::string start_str =item["Start"].get<std::string>();
+                            std::string end_str =item["End"].get<std::string>();
+                            if(start_str==end_str){
+                                continue;
+                            }
                             size_t start;
                             sscanf(start_str.c_str(),"%zu",&start);
                             std::ifstream block_is{block_path, std::ios_base::binary};
