@@ -106,10 +106,10 @@ int main(int argc, char *argv[])
 			filesync::server server{(short)std::stoi(argv[2]), argv[3], http_client};
 #endif
 			server.listen();
-			while (getchar())
-			{
-				/* code */
-			}
+			std::promise<void> promise;
+			std::future<void> future = promise.get_future();
+			future.get();
+			filesync::print_info("exited.");
 		}
 		else if (std::string(argv[1]) == "sync")
 		{
