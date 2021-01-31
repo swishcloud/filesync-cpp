@@ -237,7 +237,7 @@ namespace filesync
                         result_os.close();
                         if (filesync::file_md5(tmp_path.c_str()) == md5)
                         {
-                            std::filesystem::rename(tmp_path, this->get_file_path(file_path));
+                            filesync::movebycmd(tmp_path, this->get_file_path(file_path));
                             http::UrlValues values;
                             values.add("server_file_id", server_file_id.c_str());
                             this->http_client.PUT("/api/file", values.str, access_token);

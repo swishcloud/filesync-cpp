@@ -33,5 +33,6 @@ namespace filesync
     };
     void EXCEPTION(std::string err);
     void PLATFORM_NOT_SUPPORTED();
+    void movebycmd(std::string source, std::string destination);
 } // namespace filesync
 #endif

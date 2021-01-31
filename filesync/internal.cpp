@@ -113,4 +113,16 @@ namespace filesync
         std::ifstream fs{path, std::ios_base::binary | std::ios_base::ate};
         return fs.tellg();
     }
+
+    void movebycmd(std::string source, std::string destination)
+    {
+        char *err{};
+        auto cmd = common::string_format("mv \"%s\" \"%s\" -f", source.c_str(), destination.c_str());
+        char *cmd_resut = exec_cmd(cmd.c_str(), &err);
+        std::unique_ptr<char[]> u{err};
+        if (err != NULL)
+        {
+            throw common::exception(err);
+        }
+    }
 } // namespace filesync
