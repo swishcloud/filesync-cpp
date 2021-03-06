@@ -10,6 +10,7 @@
 #include <regex>
 #include <server.h>
 #include "boost/algorithm/string.hpp"
+#include <TCP/tcp.h>
 using namespace nlohmann;
 namespace filesync
 {

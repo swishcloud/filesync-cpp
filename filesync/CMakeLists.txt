@@ -2,6 +2,7 @@
 # project specific logic here.
 #
 cmake_minimum_required (VERSION 3.8)
+find_package(TCP REQUIRED)
 find_package(common REQUIRED)
 find_package(openssl REQUIRED)
 find_package(Boost REQUIRED COMPONENTS date_time locale regex thread)
@@ -38,6 +39,7 @@ ${OPENSLL_libssl}
 ${OPENSLL_libcrypto}
 nlohmann_json::nlohmann_json
 common::common
+ThirdPartyLibrary::TCP
 Boost::date_time Boost::locale Boost::regex Boost::thread
 ${LINUX_LIBS}
 ${CMAKE_CURRENT_SOURCE_DIR}/lib/sqlite3-debian.a)
