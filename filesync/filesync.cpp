@@ -147,10 +147,10 @@ int main(int argc, char *argv[])
 			{
 				continue;
 			}
-			if (!filesync->sync_server())
+			/*if (!filesync->sync_server())
 			{
 				continue;
-			}
+			}*/
 
 			bool procoss_monitor_failed = false;
 			if (process_monitor)
@@ -212,7 +212,7 @@ void filesync::FileSync::connect()
 		delete tcp_client;
 		tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
 		if (!tcp_client->connect())
-			throw common::exception("connect server failed");
+			throw common::exception("connect Web TCP Server failed");
 
 		//connect web server
 		common::socket::message msg;
@@ -240,7 +240,8 @@ void filesync::FileSync::connect()
 
 		//create the tcp client
 		delete tcp_client;
-		tcp_client = new filesync::tcp_client{"localhost", "8008"};
+		//todo: make tcp server port configurable
+		tcp_client = new filesync::tcp_client{"34.96.237.175", common::string_format("%d", 8008)};
 		if (!tcp_client->connect())
 			throw common::exception("connect server failed");
 	}
@@ -361,12 +362,13 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				else
 				{
 					md5 = file_md5(path);
-					if (!compare_md5(md5.c_str(), file_db.get()->get_value("local_md5")))
+					const char *server_md5 = file_db.get()->get_value("md5");
+					const char *local_md5 = file_db.get()->get_value("local_md5");
+					if (!compare_md5(md5.c_str(), local_md5 ? local_md5 : server_md5))
 					{ //this file has been modified locally.
 						need_upload = true;
 					}
 				}
-
 				if (need_upload)
 				{
 					auto file_size = std::filesystem::file_size(path);
@@ -426,7 +428,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		bool is_directory = md5 == NULL;
 		auto full_path = get_full_path(file_name);
 
-		if (!std::filesystem::exists(full_path))
+		if (local_md5 && !std::filesystem::exists(full_path))
 		{ //this file has been deleted locally.
 			delete_by_path_action *action = new delete_by_path_action();
 			action->commit_id = common::strcpy(commit_id);
@@ -543,6 +545,7 @@ bool filesync::FileSync::download_file(File &file)
 	auto port = data["Port"];
 	auto s_path = data["Path"];
 	auto md5 = data["Md5"];
+	size_t size = data["Size"].get<std::size_t>();
 	auto db_file = this->db.get_file(file.server_path.c_str());
 	assert(db_file.get()->count > 0);
 	bool is_downloaded = false;
@@ -676,6 +679,7 @@ bool filesync::FileSync::get_all_server_files()
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
 		bool ok = false;
 		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str(), &ok);
+		//auto files = this->get_server_files("/", "", "cd8b07e5-8742-4818-9331-80a098613467", &ok);
 		this->conf.commit_id = this->conf.max_commit_id;
 		this->conf.save();
 		return ok;

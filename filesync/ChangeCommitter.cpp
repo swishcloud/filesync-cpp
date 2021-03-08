@@ -10,11 +10,13 @@ filesync::ChangeCommitter::~ChangeCommitter()
 }
 filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(action_base *action)
 {
-	const int MAX_ACTION_LIMIT=50;
+	const int MAX_ACTION_LIMIT = 50;
 	this->actions.push_back(std::unique_ptr<action_base>{action});
-	filesync::print_info(common::string_format("pending %d/%d actions",actions.size(),MAX_ACTION_LIMIT));
-	if(this->actions.size()==MAX_ACTION_LIMIT){
-		if(!this->commit()){
+	filesync::print_info(common::string_format("pending %d/%d actions", actions.size(), MAX_ACTION_LIMIT));
+	if (this->actions.size() == MAX_ACTION_LIMIT)
+	{
+		if (!this->commit())
+		{
 			throw common::exception("commiting changes failed.");
 		}
 	}
@@ -27,16 +29,20 @@ bool filesync::ChangeCommitter::commit()
 	json j_delete_arr = json::array();
 	for (auto &action : this->actions)
 	{
-		if(action->type==1){
-		j_file_arr.push_back(action->to_json());
-
-		}else 		if(action->type==2){
-		j_directories_arr.push_back(action->to_json());
-
-		}else 		if(action->type==3){
-		j_delete_arr.push_back(action->to_json());
-
-		}else{
+		if (action->type == 1)
+		{
+			j_file_arr.push_back(action->to_json());
+		}
+		else if (action->type == 2)
+		{
+			j_directories_arr.push_back(action->to_json());
+		}
+		else if (action->type == 3)
+		{
+			j_delete_arr.push_back(action->to_json());
+		}
+		else
+		{
 			throw new common::exception("unrecognized action type.");
 		}
 	}
