@@ -10,7 +10,7 @@
 #include <regex>
 #include <server.h>
 #include "boost/algorithm/string.hpp"
-#include <TCP/tcp.h>
+//#include <TCP/tcp.h>
 using namespace nlohmann;
 namespace filesync
 {
@@ -126,6 +126,15 @@ int main(int argc, char *argv[])
 			{
 				/* code */
 			}
+		}
+		else if (std::string(argv[1]) == "freespace")
+		{
+			filesync->connect();
+			filesync->check_sync_path();
+			filesync->db.init(filesync->conf.db_path.c_str());
+			filesync->clear_synced_files(filesync->conf.sync_path.c_str());
+			filesync::print_info(common::string_format("Freed some space from %s,exit...", filesync->conf.sync_path.c_str()));
+			exit(0);
 		}
 	}
 	try
@@ -437,6 +446,50 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 			this->committer->add_action(action);
 		}
 		delete[](full_path);
+	}
+	return true;
+}
+bool filesync::FileSync::clear_synced_files(const char *path)
+{
+	std::vector<std::string> files;
+	common::find_files(path, files, true, 1);
+	for (std::string v : files)
+	{
+		v = format_path(v);
+		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
+		auto file_db = db.get_file(relative_path);
+		std::string md5 = file_md5(v.c_str());
+		if (file_db.get()->count == 1)
+		{
+			const char *server_md5 = file_db.get()->get_value("md5");
+			const char *local_md5 = file_db.get()->get_value("local_md5");
+			if (compare_md5(md5.c_str(), server_md5))
+			{
+				this->db.update_local_md5(relative_path, NULL);
+				if (!std::filesystem::remove(v.c_str()))
+				{
+					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
+				}
+			}
+		}
+	}
+
+	std::vector<std::string> directories;
+	common::find_files(path, directories, true, 2);
+	for (std::string v : directories)
+	{
+		v = format_path(v);
+		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
+		auto file_db = db.get_file(relative_path);
+		if (file_db.get()->count == 1)
+		{
+			if (std::filesystem::is_empty(v))
+			{
+				this->db.update_local_md5(relative_path, NULL);
+				if (!std::filesystem::remove(v))
+					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
+			}
+		}
 	}
 	return true;
 }

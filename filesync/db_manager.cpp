@@ -250,7 +250,7 @@ bool filesync::db_manager::update_md5(const char *filename, const char *md5)
 }
 bool filesync::db_manager::update_local_md5(const char *filename, const char *local_md5)
 {
-	if (local_md5[0] == '\0')
+	if (local_md5 && local_md5[0] == '\0')
 	{
 		local_md5 = NULL;
 	}
@@ -259,7 +259,7 @@ bool filesync::db_manager::update_local_md5(const char *filename, const char *lo
 	sqlite3_stmt *stmt;
 	int rc = sqlite3_prepare_v2(db, sql.c_str(), strlen(sql.c_str()), &stmt, NULL);
 	assert(rc == SQLITE_OK);
-	rc = sqlite3_bind_text(stmt, 1, local_md5, strlen(local_md5), NULL);
+	rc = sqlite3_bind_text(stmt, 1, local_md5, local_md5 ? strlen(local_md5) : 0, NULL);
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_bind_text(stmt, 2, filename, strlen(filename), NULL);
 	assert(rc == SQLITE_OK);
@@ -438,7 +438,7 @@ json filesync::create_directory_action::to_json()
 }
 filesync::create_file_action::create_file_action()
 {
-	this->type=1;
+	this->type = 1;
 }
 filesync::create_file_action::~create_file_action()
 {
@@ -464,7 +464,7 @@ filesync::create_file_action::~create_file_action()
 }*/
 filesync::create_directory_action::create_directory_action()
 {
-	this->type=2;
+	this->type = 2;
 }
 filesync::create_directory_action::~create_directory_action()
 {
@@ -481,7 +481,7 @@ filesync::create_directory_action::~create_directory_action()
 }*/
 filesync::delete_by_path_action::delete_by_path_action()
 {
-	this->type=3;
+	this->type = 3;
 }
 /*filesync::delete_by_path_action::delete_by_path_action(delete_by_path_action &&action)
 {

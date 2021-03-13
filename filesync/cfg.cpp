@@ -59,9 +59,9 @@ void filesync::CONFIG::save()
 	}
 	out.flush();
 	out.close();
-	filesync::print_debug(common::string_format("saved config:%s", this->path().string().c_str()));
+	filesync::print_debug(common::string_format("saved config:%s", this->path().c_str()));
 }
-std::filesystem::path filesync::CONFIG::path()
+std::string filesync::CONFIG::path()
 {
 	auto path = std::filesystem::path(datapath).append(this->debug_mode ? "cfg_debug" : "cfg");
 	auto parent = filesync::get_parent_dir(path.string().c_str());
@@ -69,7 +69,7 @@ std::filesystem::path filesync::CONFIG::path()
 	{
 		assert(std::filesystem::create_directories(parent));
 	}
-	return path;
+	return path.string();
 }
 
 void filesync::PartitionConf::init(bool debug_mode)

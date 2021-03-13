@@ -26,7 +26,7 @@ namespace filesync
 		~CONFIG();
 		void save();
 		void load();
-		std::filesystem::path path();
+		std::string path();
 	};
 	class PartitionConf
 	{

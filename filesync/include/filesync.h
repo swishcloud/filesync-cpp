@@ -101,6 +101,7 @@ public:
 	bool sync_server();
 	bool sync_local_added_or_modified(const char *path);
 	bool sync_local_deleted(const char *path);
+	bool clear_synced_files(const char *path);
 	File local_file(std::string full_path, bool is_directory);
 	File server_file(std::string server_path, std::string commit_id, bool is_directory);
 	void add_local_file_change(common::monitor::change *change);
