@@ -10,7 +10,6 @@
 #include <regex>
 #include <server.h>
 #include "boost/algorithm/string.hpp"
-//#include <TCP/tcp.h>
 using namespace nlohmann;
 namespace filesync
 {
@@ -107,9 +106,7 @@ int main(int argc, char *argv[])
 			filesync::server server{(short)std::stoi(argv[2]), argv[3], http_client};
 #endif
 			server.listen();
-			std::promise<void> promise;
-			std::future<void> future = promise.get_future();
-			future.get();
+
 			filesync::print_info("exited.");
 		}
 		else if (std::string(argv[1]) == "sync")
@@ -156,10 +153,10 @@ int main(int argc, char *argv[])
 			{
 				continue;
 			}
-			/*if (!filesync->sync_server())
+			if (!filesync->sync_server())
 			{
 				continue;
-			}*/
+			}
 
 			bool procoss_monitor_failed = false;
 			if (process_monitor)
@@ -209,7 +206,7 @@ int main(int argc, char *argv[])
 	}
 	catch (const std::exception &ex)
 	{
-		std::cout << ex.what() << "";
+		common::print_info(ex.what());
 	}
 	delete (filesync);
 	return 0;
@@ -218,21 +215,20 @@ void filesync::FileSync::connect()
 {
 	try
 	{
-		delete tcp_client;
-		tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
-		if (!tcp_client->connect())
+		tcp_client tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
+		if (!tcp_client.connect())
 			throw common::exception("connect Web TCP Server failed");
 
 		//connect web server
-		common::socket::message msg;
-		msg.msg_type = static_cast<int>(MsgType::Download_File);
+		filesync::tcp::message msg;
+		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 		char *token = get_token();
 		msg.addHeader({"token", token});
 		delete[](token);
-		this->tcp_client->session_->send_message(msg);
-		auto reply = this->tcp_client->session_->read_message();
-
-		if (reply.msg_type == 0)
+		filesync::tcp::send_message(&tcp_client.xclient.session, msg, NULL);
+		filesync::tcp::message reply;
+		filesync::tcp::read_message(&tcp_client.xclient.session, reply, NULL);
+		if (!reply)
 		{
 			throw common::exception("connection failed");
 		}
@@ -246,13 +242,7 @@ void filesync::FileSync::connect()
 		{
 			conf.commit_id.clear();
 		}
-
-		//create the tcp client
-		delete tcp_client;
-		//todo: make tcp server port configurable
-		tcp_client = new filesync::tcp_client{"34.96.237.175", common::string_format("%d", 8008)};
-		if (!tcp_client->connect())
-			throw common::exception("connect server failed");
+		tcp_client.xclient.session.close();
 	}
 	catch (const std::exception &e)
 	{
@@ -495,6 +485,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 }
 bool filesync::FileSync::upload_file(std::string full_path, const char *md5, long size)
 {
+	tcp_client *tcp_client = this->get_tcp_client();
 	std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
 	char *token = filesync::get_token();
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
@@ -532,8 +523,8 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		return true;
 	}
 
-	common::socket::message msg;
-	msg.msg_type = static_cast<int>(MsgType::UploadFile);
+	filesync::tcp::message msg;
+	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
 	msg.addHeader({"path", path});
 	msg.addHeader({"md5", md5});
 	msg.addHeader({"file_size", (size_t)std::stoi(file_size)});
@@ -543,14 +534,32 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	msg.addHeader({TokenHeaderKey, token});
 	delete[](token);
 	msg.body_size = std::stoi(file_size) - std::stoi(uploaded_size);
-	if (!this->tcp_client->session_->send_message(msg))
+	filesync::tcp::send_message(&tcp_client->xclient.session, msg, NULL);
+	std::shared_ptr<std::istream> fs{new std::ifstream(full_path, std::ios::binary)};
+	fs->seekg(std::stoi(uploaded_size), std::ios_base::beg);
+	if (!*fs)
 	{
-		filesync::print_info(common::string_format("failed to send message"));
+		common::print_info(common::string_format("can not open %s", full_path.c_str()));
 		return false;
 	}
-	this->tcp_client->session_->send_file(full_path, std::stoi(uploaded_size));
-	auto reply = this->tcp_client->session_->read_message();
-	if (reply.msg_type == static_cast<int>(filesync::MsgType::Reply))
+	std::promise<bool> promise;
+	tcp_client->xclient.session.send_stream(
+		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+			if (error || completed)
+			{
+				promise.set_value(!error);
+			}
+		},
+		NULL);
+	bool upload_res = promise.get_future().get();
+	common::print_info(common::string_format("Upload %s:%s", upload_res ? "OK" : "Failed", full_path.c_str()));
+	if (!upload_res)
+	{
+		return false;
+	}
+	filesync::tcp::message reply;
+	filesync::tcp::read_message(&tcp_client->xclient.session, reply, NULL);
+	if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
 	{
 		return true;
 	}
@@ -567,16 +576,37 @@ bool filesync::FileSync::upload_file_v2(const char *ip, unsigned short port, std
 bool filesync::FileSync::clear_errs()
 {
 	this->errs.clear();
-	if (this->tcp_client->session_ == NULL || this->tcp_client->session_->has_closed)
-	{
-		delete this->tcp_client;
-		this->tcp_client = new filesync::tcp_client{"localhost", "8008"};
-		return this->tcp_client->connect();
-	}
 	return true;
+}
+filesync::tcp_client *filesync::FileSync::get_tcp_client()
+{
+	if (!this->_tcp_client || this->_tcp_client->closed)
+	{
+		while (1)
+		{
+			//create the tcp client
+			common::print_debug("creating a tcp client...");
+			delete _tcp_client;
+			//todo: make tcp server port configurable
+			//_tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", 8008)};
+			_tcp_client = new filesync::tcp_client{"127.0.0.1", common::string_format("%d", 8008)};
+			if (!_tcp_client->connect())
+			{
+				common::print_info("connect server failed,connecting in 10s");
+				std::this_thread::sleep_for(std::chrono::seconds(10));
+				continue;
+			}
+			else
+			{
+				break;
+			}
+		}
+	}
+	return this->_tcp_client;
 }
 bool filesync::FileSync::download_file(File &file)
 {
+	tcp_client *tcp_client = this->get_tcp_client();
 	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", url_encode(file.server_path.c_str()).c_str(), file.commit_id.c_str());
 	char *token = filesync::get_token();
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
@@ -609,14 +639,15 @@ bool filesync::FileSync::download_file(File &file)
 	}
 	else
 	{
-		common::socket::message msg;
-		msg.msg_type = static_cast<int>(MsgType::Download_File);
+		filesync::tcp::message msg;
+		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 		msg.addHeader({"path", s_path.get<std::string>()});
 		token = filesync::get_token();
 		msg.addHeader({TokenHeaderKey, token});
 		delete[](token);
-		this->tcp_client->session_->send_message(msg);
-		auto reply = this->tcp_client->session_->read_message();
+		filesync::tcp::send_message(&tcp_client->xclient.session, msg, NULL);
+		filesync::tcp::message reply;
+		filesync::tcp::read_message(&tcp_client->xclient.session, reply, NULL);
 		if (!reply)
 		{
 			return false;
@@ -624,53 +655,52 @@ bool filesync::FileSync::download_file(File &file)
 		std::promise<bool> promise;
 		std::future<bool> future = promise.get_future();
 		std::string tmp_path = (std::filesystem::temp_directory_path() / trim_trailing_space(md5.get<std::string>())).string();
-		std::ofstream os{tmp_path, std::ios_base::binary};
-		if (os.bad())
+		std::shared_ptr<std::ofstream> os{new std::ofstream{tmp_path, std::ios_base::binary}};
+		if (os->bad())
 		{
 			filesync::print_info(common::string_format("failed to create a file named %s", tmp_path.c_str()));
 			return false;
 		}
 		filesync::print_info(common::string_format("Downloading file %s", file.server_path.c_str()));
-		this->tcp_client->session_->async_read_chunk(reply.body_size, [&promise, tmp_path, this, &os, md5, &file](int len, std::string error, bool finished) {
-			if (!error.empty())
-			{
-				filesync::print_info(common::string_format("failed to download file %s", file.server_path.c_str()));
-				promise.set_value(false);
-				return;
-			}
-			os.write(this->tcp_client->session_->buf.get(), len);
-			if (os.bad())
-			{
-				filesync::print_info(common::string_format("failed to download file %s", file.server_path.c_str()));
-				promise.set_value(false);
-				return;
-			}
-			if (finished)
-			{
-				os.close();
-				if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+		common::print_debug(common::string_format("temporary file:%s", tmp_path.c_str()));
+		std::promise<bool> dl_promise;
+		tcp_client->xclient.session.receive_stream(
+			os, reply.body_size, [&dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+				if (completed)
 				{
-					filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it...", file.server_path.c_str()));
-					if (!std::filesystem::remove(tmp_path))
-					{
-						filesync::print_info(common::string_format("WARNING!failed to delete the temp file %s", tmp_path.c_str()));
-					}
-					promise.set_value(false);
-					return;
+					dl_promise.set_value(true);
 				}
-				try
+				else if (error)
 				{
-					std::filesystem::rename(tmp_path, file.full_path);
-					promise.set_value(true);
+					common::print_info(error);
+					dl_promise.set_value(false);
 				}
-				catch (std::filesystem::filesystem_error &e)
-				{
-					filesync::print_info(common::string_format("failed to rename the file with error:%s", e.what()));
-					promise.set_value(false);
-				}
+			},
+			NULL);
+		if (!dl_promise.get_future().get())
+		{
+			return false;
+		}
+		os->flush();
+		os->close();
+		if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+		{
+			filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it...", file.server_path.c_str()));
+			if (!std::filesystem::remove(tmp_path))
+			{
+				filesync::print_info(common::string_format("WARNING!failed to delete the temp file %s", tmp_path.c_str()));
 			}
-		});
-		is_downloaded = future.get();
+			return false;
+		}
+		try
+		{
+			std::filesystem::rename(tmp_path, file.full_path);
+		}
+		catch (std::filesystem::filesystem_error &e)
+		{
+			filesync::print_info(common::string_format("failed to rename the file with error:%s", e.what()));
+		}
+		is_downloaded = true;
 	}
 	if (is_downloaded)
 	{
@@ -904,7 +934,7 @@ filesync::FileSync::FileSync(char *server_location)
 	this->db = filesync::db_manager{};
 	this->committer = new ChangeCommitter(*this);
 	this->monitor = NULL;
-	this->tcp_client = NULL;
+	this->_tcp_client = NULL;
 	this->corret_path_sepatator(this->server_location);
 }
 filesync::FileSync::~FileSync()
@@ -912,7 +942,7 @@ filesync::FileSync::~FileSync()
 	delete (this->committer);
 	delete[](this->server_location);
 	delete (this->monitor);
-	delete this->tcp_client;
+	delete this->_tcp_client;
 
 	this->committer = NULL;
 	this->server_location = NULL;

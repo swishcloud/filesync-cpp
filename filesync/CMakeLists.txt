@@ -2,7 +2,7 @@
 # project specific logic here.
 #
 cmake_minimum_required (VERSION 3.8)
-#find_package(TCP REQUIRED)
+find_package(TCP REQUIRED)
 find_package(common REQUIRED)
 find_package(openssl REQUIRED)
 find_package(Boost REQUIRED COMPONENTS date_time locale regex thread)
@@ -13,7 +13,7 @@ if (MSVC)
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>" "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
     set(CMAKE_EXE_LINKER_FLAGS "")
 endif()
-target_link_libraries(filesync PRIVATE common::common  Boost::date_time Boost::locale Boost::regex Boost::thread
+target_link_libraries(filesync PRIVATE common::common ThirdPartyLibrary::TCP Boost::date_time Boost::locale Boost::regex Boost::thread
 ${OPENSLL_libssl}
 ${OPENSLL_libcrypto}
 nlohmann_json::nlohmann_json

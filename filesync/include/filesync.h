@@ -2,7 +2,7 @@
 // or project specific include files.
 #ifndef FILESYNC
 #define FILESYNC
-#pragma once
+//#pragma once
 
 #include <iostream>
 #include <filesystem>
@@ -83,7 +83,7 @@ public:
 	common::monitor::MONITOR *monitor;
 	filesync::PartitionConf conf;
 	filesync::db_manager db;
-	filesync::tcp_client *tcp_client;
+	filesync::tcp_client *_tcp_client;
 	CONFIG cfg;
 	ChangeCommitter *committer;
 	FileSync(char *server_location);
@@ -107,6 +107,7 @@ public:
 	void add_local_file_change(common::monitor::change *change);
 	common::monitor::change *get_local_file_change();
 	bool clear_errs();
+	filesync::tcp_client *get_tcp_client();
 };
 struct filesync::File
 {
