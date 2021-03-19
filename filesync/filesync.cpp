@@ -1,7 +1,6 @@
 ﻿// filesync.cpp : Defines the entry point for the application.
 //
 #include <http.h>
-#include <tcp.h>
 #include "filesync.h"
 #include <locale.h>
 #include "db_manager.h"
@@ -220,14 +219,14 @@ void filesync::FileSync::connect()
 			throw common::exception("connect Web TCP Server failed");
 
 		//connect web server
-		filesync::tcp::message msg;
+		XTCP::message msg;
 		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 		char *token = get_token();
 		msg.addHeader({"token", token});
 		delete[](token);
-		filesync::tcp::send_message(&tcp_client.xclient.session, msg, NULL);
-		filesync::tcp::message reply;
-		filesync::tcp::read_message(&tcp_client.xclient.session, reply, NULL);
+		XTCP::send_message(&tcp_client.xclient.session, msg, NULL);
+		XTCP::message reply;
+		XTCP::read_message(&tcp_client.xclient.session, reply, NULL);
 		if (!reply)
 		{
 			throw common::exception("connection failed");
@@ -523,7 +522,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		return true;
 	}
 
-	filesync::tcp::message msg;
+	XTCP::message msg;
 	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
 	msg.addHeader({"path", path});
 	msg.addHeader({"md5", md5});
@@ -534,7 +533,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	msg.addHeader({TokenHeaderKey, token});
 	delete[](token);
 	msg.body_size = std::stoi(file_size) - std::stoi(uploaded_size);
-	filesync::tcp::send_message(&tcp_client->xclient.session, msg, NULL);
+	XTCP::send_message(&tcp_client->xclient.session, msg, NULL);
 	std::shared_ptr<std::istream> fs{new std::ifstream(full_path, std::ios::binary)};
 	fs->seekg(std::stoi(uploaded_size), std::ios_base::beg);
 	if (!*fs)
@@ -557,8 +556,8 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	{
 		return false;
 	}
-	filesync::tcp::message reply;
-	filesync::tcp::read_message(&tcp_client->xclient.session, reply, NULL);
+	XTCP::message reply;
+	XTCP::read_message(&tcp_client->xclient.session, reply, NULL);
 	if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
 	{
 		return true;
@@ -639,22 +638,22 @@ bool filesync::FileSync::download_file(File &file)
 	}
 	else
 	{
-		filesync::tcp::message msg;
+		XTCP::message msg;
 		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 		msg.addHeader({"path", s_path.get<std::string>()});
 		token = filesync::get_token();
 		msg.addHeader({TokenHeaderKey, token});
 		delete[](token);
-		filesync::tcp::send_message(&tcp_client->xclient.session, msg, NULL);
-		filesync::tcp::message reply;
-		filesync::tcp::read_message(&tcp_client->xclient.session, reply, NULL);
+		XTCP::send_message(&tcp_client->xclient.session, msg, NULL);
+		XTCP::message reply;
+		XTCP::read_message(&tcp_client->xclient.session, reply, NULL);
 		if (!reply)
 		{
 			return false;
 		}
 		std::promise<bool> promise;
 		std::future<bool> future = promise.get_future();
-		std::string tmp_path = (std::filesystem::temp_directory_path() / trim_trailing_space(md5.get<std::string>())).string();
+		std::string tmp_path = (std::filesystem::temp_directory_path() / "filesync" / trim_trailing_space(md5.get<std::string>())).string();
 		std::shared_ptr<std::ofstream> os{new std::ofstream{tmp_path, std::ios_base::binary}};
 		if (os->bad())
 		{

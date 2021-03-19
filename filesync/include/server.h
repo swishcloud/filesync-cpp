@@ -35,10 +35,10 @@ namespace filesync
         std::string file_location;
         //private functions
         void do_accept();
-        void async_receive_file(filesync::tcp::message &msg, XTCP::tcp_session *s);
+        void async_receive_file(XTCP::message &msg, XTCP::tcp_session *s);
         std::string get_file_path(std::string name);
         std::string get_block_path(std::string name);
-        void process_message(XTCP::tcp_session *session, filesync::tcp::message &msg);
+        void process_message(XTCP::tcp_session *session, XTCP::message &msg);
         XTCP::tcp_server tcp_server;
 
     public:
@@ -46,7 +46,7 @@ namespace filesync
         ~server();
         void listen();
         void receive(XTCP::tcp_session *s);
-        void async_receive_file_v2(filesync::tcp::message &msg, XTCP::tcp_session *s);
+        void async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s);
     };
     class tcp_client
     {
