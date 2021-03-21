@@ -40,6 +40,7 @@ namespace filesync
 		std::string sync_path;
 		void init(bool debug_mode);
 		void save();
+		std::string get_tmp_dir(std::error_code &ec);
 	};
 } // namespace filesync
 #endif

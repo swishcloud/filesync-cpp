@@ -107,3 +107,12 @@ void filesync::PartitionConf::save()
 	out << j;
 	out.close();
 }
+std::string filesync::PartitionConf::get_tmp_dir(std::error_code &ec)
+{
+	std::filesystem::path tmp_dir = std::filesystem::temp_directory_path() / "filesync";
+	if (!std::filesystem::exists(tmp_dir))
+	{
+		std::filesystem::create_directory(tmp_dir, ec);
+	}
+	return tmp_dir.string();
+}
