@@ -67,7 +67,7 @@ namespace filesync
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
-	std::cout << "LC_ALL: " << setlocale(LC_ALL, NULL) << std::endl;
+	//std::cout << "LC_ALL: " << setlocale(LC_ALL, NULL) << std::endl;
 
 #ifdef __linux__
 #else
@@ -84,10 +84,10 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 #endif
-	for (int i = 0; i < argc; i++)
+	/*for (int i = 0; i < argc; i++)
 	{
 		filesync::print_debug(argv[i]);
-	}
+	}*/
 	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
 	if (argc > 1)
 	{
@@ -132,6 +132,29 @@ int main(int argc, char *argv[])
 			filesync::print_info(common::string_format("Freed some space from %s,exit...", filesync->conf.sync_path.c_str()));
 			exit(0);
 		}
+		else if (std::string(argv[1]) == "export")
+		{
+			auto path = argv[2];
+			auto commit_id = argv[3];
+			auto max_commit_id = argv[4];
+			auto destination_folder = argv[5];
+			common::print_info(common::string_format("exporting server directory %s with content since %s until %s to local directory %s", path, std::string(commit_id) == "/" ? "first commit" : commit_id, max_commit_id, destination_folder));
+			commit_id = std::string(commit_id) == "/" ? NULL : commit_id;
+			if (!std::filesystem::exists(destination_folder))
+			{
+				std::filesystem::create_directory(destination_folder);
+			}
+			else
+			{
+				if (!std::filesystem::is_directory(destination_folder))
+				{
+					common::print_debug(common::string_format("the path %s already exists, but it's not directory", destination_folder));
+					return 1;
+				}
+			}
+			filesync->connect();
+			return 1;
+		}
 	}
 	try
 	{
@@ -143,7 +166,6 @@ int main(int argc, char *argv[])
 		bool process_monitor = false;
 		while (1)
 		{
-			std::cout << "-----begin syncing" << std::endl;
 			if (!filesync->clear_errs())
 			{
 				continue;
@@ -199,7 +221,6 @@ int main(int argc, char *argv[])
 			}
 			if (!procoss_monitor_failed)
 				filesync->committer->commit();
-			std::cout << "-----end syncing" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		}
 	}
@@ -588,7 +609,7 @@ filesync::tcp_client *filesync::FileSync::get_tcp_client()
 			delete _tcp_client;
 			//todo: make tcp server port configurable
 			//_tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", 8008)};
-			_tcp_client = new filesync::tcp_client{"127.0.0.1", common::string_format("%d", 8008)};
+			_tcp_client = new filesync::tcp_client{this->cfg.server_ip.c_str(), common::string_format("%d", 8008)};
 			if (!_tcp_client->connect())
 			{
 				common::print_info("connect server failed,connecting in 10s");
@@ -653,7 +674,14 @@ bool filesync::FileSync::download_file(File &file)
 		}
 		std::promise<bool> promise;
 		std::future<bool> future = promise.get_future();
-		std::string tmp_path = (std::filesystem::temp_directory_path() / "filesync" / trim_trailing_space(md5.get<std::string>())).string();
+		std::error_code ec;
+		std::string tmp_dir = this->conf.get_tmp_dir(ec);
+		if (ec)
+		{
+			common::print_info(ec.message());
+			return false;
+		}
+		std::string tmp_path = (std::filesystem::path(tmp_dir) / trim_trailing_space(md5.get<std::string>())).string();
 		std::shared_ptr<std::ofstream> os{new std::ofstream{tmp_path, std::ios_base::binary}};
 		if (os->bad())
 		{
@@ -879,6 +907,7 @@ start:
 bool filesync::FileSync::get_file_changes()
 {
 start:
+	common::print_info("checking server changes");
 	std::string url_path = common::string_format("/api/commit/changes?commit_id=%s", this->conf.commit_id.c_str());
 	char *token = filesync::get_token();
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(token)};

@@ -226,7 +226,7 @@ namespace common
 			{
 				//filesync::print_debug("async read succeed.");
 				this->resp_text = beast::buffers_to_string(this->res.body().data());
-				filesync::print_debug(common::string_format("HTTP RESPONSE:[%s]", this->resp_text.c_str()));
+				//filesync::print_debug(common::string_format("HTTP RESPONSE:[%s]", this->resp_text.c_str()));
 			}
 			else
 			{

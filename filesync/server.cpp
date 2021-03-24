@@ -49,6 +49,7 @@ namespace filesync
                     if (!success)
                     {
                         common::print_debug(common::string_format("Faile to send a reply mssage."));
+                        return;
                     }
                     std::shared_ptr<std::istream> fs{new std::ifstream{file_path, std::ios_base::binary}};
                     session->send_stream(
