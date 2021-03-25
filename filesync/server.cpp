@@ -11,7 +11,16 @@ namespace filesync
             if (success)
             {
                 common::print_debug("Received a client message.");
-                this->process_message(session, msg);
+                this->process_message(session, msg, [this, session](std::string error) {
+                    if (error.empty())
+                    {
+                        receive(session);
+                    }
+                    else
+                    {
+                        common::print_debug(common::string_format("Error processing message:%s", error.c_str()));
+                    }
+                });
             }
         });
     }
@@ -22,17 +31,13 @@ namespace filesync
             receive(session);
         };
     }
-    void server::process_message(XTCP::tcp_session *session, XTCP::message &msg)
+    void server::process_message(XTCP::tcp_session *session, XTCP::message &msg, std::function<void(std::string error)> cb)
     {
         try
         {
 
             switch (msg.msg_type)
             {
-            case static_cast<int>(filesync::tcp::MsgType::File):
-                //async_receive_file(msg, s);
-                break;
-
             case static_cast<int>(filesync::tcp::MsgType::UploadFile):
                 async_receive_file_v2(msg, session);
                 break;
@@ -45,22 +50,22 @@ namespace filesync
                 auto msg = XTCP::message{};
                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
                 msg.body_size = filesync::file_size(file_path);
-                XTCP::send_message(session, msg, [file_path, this, session](bool success) {
+                XTCP::send_message(session, msg, [file_path, this, cb, session](bool success) {
                     if (!success)
                     {
-                        common::print_debug(common::string_format("Faile to send a reply mssage."));
+                        cb("Faile to send a reply mssage.");
                         return;
                     }
                     std::shared_ptr<std::istream> fs{new std::ifstream{file_path, std::ios_base::binary}};
                     session->send_stream(
-                        fs, [this](size_t written_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+                        fs, [this, cb](size_t written_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
                             if (completed)
                             {
-                                receive(session);
+                                cb(NULL);
                             }
                             else if (error)
                             {
-                                common::print_debug(common::string_format("Faile to send a stream."));
+                                cb("Faile to send a stream.");
                             }
                         },
                         NULL);
@@ -69,9 +74,7 @@ namespace filesync
         }
         catch (const std::exception &e)
         {
-            common::print_info(e.what());
-            common::print_info("closing session");
-            session->close();
+            cb(e.what());
         }
     }
     server::~server()
@@ -148,19 +151,20 @@ namespace filesync
     }
     void server::async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s)
     {
+        std::function<void(std::string err)> cb;
         std::shared_ptr<int> written{new int{}};
         std::string block_path = get_block_path(boost::uuids::to_string(boost::uuids::random_generator()()));
         std::shared_ptr<std::ofstream> os{new std::ofstream{block_path, std::ios_base::binary}};
         if (!os.get()->is_open())
         {
-            filesync::print_debug(common::string_format("error opening file %s", block_path.c_str()));
-            s->close();
+            auto err = common::string_format("error opening file %s", block_path.c_str());
+            cb(err);
             return;
         }
         filesync::print_debug("processing file message uploaded by client.");
         //receive file
         s->read(
-            msg.body_size, [written, os, block_path, msg, this, s](size_t read_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+            msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
                 try
                 {
                     std::string file_path = msg.getHeaderValue<std::string>("path");
@@ -192,7 +196,12 @@ namespace filesync
                             values.add("end", *written.get() + uploaded_size);
                             this->http_client.POST(url_path, values.str, access_token);
                         }
-                        if (completed)
+
+                        if (error)
+                        {
+                            throw common::exception(common::string_format("async_receive_file_v2 failed with error:", error));
+                        }
+                        else if (completed)
                         {
                             //assemble file
                             http::UrlValues values;
@@ -254,9 +263,16 @@ namespace filesync
                                 //reply
                                 auto msg = XTCP::message{};
                                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
-                                XTCP::send_message(s, msg, [this, s](bool success) {
-                                    assert(success);
-                                    receive(s);
+                                XTCP::send_message(s, msg, [this, s, cb](bool success) {
+                                    if (success)
+                                    {
+                                        common::print_debug(common::string_format("client uploaded a file successfully"));
+                                        cb(NULL);
+                                    }
+                                    else
+                                    {
+                                        cb("failed to send reply message after change server file status to completed.");
+                                    }
                                 });
                             }
                             else
@@ -268,16 +284,11 @@ namespace filesync
                             }
                         }
                     }
-
-                    if (error)
-                    {
-                        throw common::exception(common::string_format("async_receive_file_v2 failed with error:", error));
-                    }
                 }
                 catch (const std::exception &e)
                 {
-                    filesync::print_debug(common::string_format("Closing socket,error:%s", e.what()));
-                    s->close();
+                    auto err = common::string_format("Closing socket,error:%s", e.what());
+                    cb(err);
                 }
             },
             NULL);

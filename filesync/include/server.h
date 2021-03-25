@@ -38,7 +38,7 @@ namespace filesync
         void async_receive_file(XTCP::message &msg, XTCP::tcp_session *s);
         std::string get_file_path(std::string name);
         std::string get_block_path(std::string name);
-        void process_message(XTCP::tcp_session *session, XTCP::message &msg);
+        void process_message(XTCP::tcp_session *session, XTCP::message &msg,std::function<void(std::string error)> cb);
         XTCP::tcp_server tcp_server;
 
     public:
