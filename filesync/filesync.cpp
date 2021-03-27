@@ -135,11 +135,15 @@ int main(int argc, char *argv[])
 		else if (std::string(argv[1]) == "export")
 		{
 			auto path = argv[2];
-			auto commit_id = argv[3];
+			const char *commit_id = argv[3];
 			auto max_commit_id = argv[4];
 			auto destination_folder = argv[5];
+			if (destination_folder[strlen(destination_folder) - 1] == '/' || destination_folder[strlen(destination_folder) - 1] == '\\')
+			{
+				destination_folder[strlen(destination_folder) - 1] = '\0';
+			}
 			common::print_info(common::string_format("exporting server directory %s with content since %s until %s to local directory %s", path, std::string(commit_id) == "/" ? "first commit" : commit_id, max_commit_id, destination_folder));
-			commit_id = std::string(commit_id) == "/" ? NULL : commit_id;
+			commit_id = std::string(commit_id) == "/" ? "" : commit_id;
 			if (!std::filesystem::exists(destination_folder))
 			{
 				std::filesystem::create_directory(destination_folder);
@@ -153,7 +157,31 @@ int main(int argc, char *argv[])
 				}
 			}
 			filesync->connect();
-			return 1;
+			std::string first_server_path = path;
+			std::string export_directory_path = destination_folder;
+			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [first_server_path, export_directory_path, filesync](filesync::ServerFile &file) {
+				auto relative_path = common::get_relative_path(first_server_path, file.path);
+				auto exported_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path) / relative_path).string();
+				if (file.is_directory)
+				{
+					common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
+					common::makedir(exported_path);
+					return;
+				}
+				common::print_info(common::string_format("download server file:%s", file.path.c_str()));
+				auto error = filesync->download_file(file.path, file.commit_id, exported_path);
+				if (!error.empty())
+				{
+					common::print_info(error);
+				}
+			});
+			if (!error.empty())
+			{
+				common::print_info(error);
+				exit(1);
+			}
+			common::print_info("Already exported all files.");
+			return 0;
 		}
 	}
 	try
@@ -231,6 +259,46 @@ int main(int argc, char *argv[])
 	delete (filesync);
 	return 0;
 }
+std::string filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback)
+{
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+	std::unique_ptr<char[]> token{get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
+	do
+	{
+		c.GET();
+	} while (!c.error.empty());
+	auto j = json::parse(c.resp_text);
+	auto err = j["error"];
+	if (!err.is_null())
+	{
+		return "http resp:" + err.get<std::string>();
+	}
+	auto data = j["data"];
+	for (auto item : data)
+	{
+		std::string file_server_path = common::string_format("%s%s%s", path, strcmp(path, "/") == 0 ? "" : "/", item["name"].get<std::string>().c_str());
+		ServerFile f;
+		f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
+		if (!item["md5"].is_null())
+			f.md5 = item["md5"].get<std::string>();
+		f.name = item["name"].get<std::string>();
+		if (!item["size"].is_null())
+			f.size = common::to_size_t(item["size"].get<std::string>());
+		f.commit_id = item["commit_id"].get<std::string>();
+		f.path = file_server_path;
+		callback(f);
+		if (f.is_directory)
+		{
+			auto error = this->get_server_files(f.path.c_str(), f.commit_id.c_str(), max_commit_id, callback);
+			if (!error.empty())
+			{
+				return error;
+			}
+		}
+	}
+	return "";
+}
 void filesync::FileSync::connect()
 {
 	try
@@ -262,7 +330,6 @@ void filesync::FileSync::connect()
 		{
 			conf.commit_id.clear();
 		}
-		tcp_client.xclient.session.close();
 	}
 	catch (const std::exception &e)
 	{
@@ -623,6 +690,94 @@ filesync::tcp_client *filesync::FileSync::get_tcp_client()
 		}
 	}
 	return this->_tcp_client;
+}
+std::string filesync::FileSync::download_file(std::string server_path, std::string commit_id, std::string save_path)
+{
+	tcp_client *tcp_client = this->get_tcp_client();
+	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", url_encode(server_path.c_str()).c_str(), commit_id.c_str());
+	std::unique_ptr<char[]> token{filesync::get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
+	c.GET();
+	if (!c.error.empty())
+	{
+		return c.error;
+	}
+	auto j = json::parse(c.resp_text);
+	auto err = j["error"];
+	auto data = j["data"];
+	if (!err.is_null())
+	{
+		return err;
+	}
+	auto ip = data["Ip"];
+	auto port = data["Port"];
+	auto path = data["Path"];
+	auto md5 = data["Md5"];
+	size_t size = data["Size"].get<std::size_t>();
+
+	XTCP::message msg;
+	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
+	msg.addHeader({"path", path.get<std::string>()});
+	msg.addHeader({TokenHeaderKey, token.get()});
+	XTCP::send_message(&tcp_client->xclient.session, msg, NULL);
+	XTCP::message reply;
+	XTCP::read_message(&tcp_client->xclient.session, reply, NULL);
+	if (!reply)
+	{
+		return "file server have no response";
+	}
+	std::promise<bool> promise;
+	std::future<bool> future = promise.get_future();
+	std::error_code ec;
+	std::string tmp_dir = this->conf.get_tmp_dir(ec);
+	if (ec)
+	{
+		return ec.message();
+	}
+	std::string tmp_path = (std::filesystem::path(tmp_dir) / trim_trailing_space(md5.get<std::string>())).string();
+	std::shared_ptr<std::ofstream> os{new std::ofstream{tmp_path, std::ios_base::binary}};
+	if (os->bad())
+	{
+		return common::string_format("failed to create a file named %s", tmp_path.c_str());
+	}
+	common::print_debug(common::string_format("temporary file:%s", tmp_path.c_str()));
+	std::promise<std::string> dl_promise;
+	tcp_client->xclient.session.receive_stream(
+		os, reply.body_size, [&dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+			if (completed)
+			{
+				dl_promise.set_value("");
+			}
+			else if (error)
+			{
+				dl_promise.set_value(error);
+			}
+		},
+		NULL);
+	if (!dl_promise.get_future().get().empty())
+	{
+		return dl_promise.get_future().get();
+	}
+	os->flush();
+	os->close();
+	if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+	{
+		filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it..."));
+		if (!std::filesystem::remove(tmp_path))
+		{
+			filesync::print_info(common::string_format("WARNING!failed to delete the temp file %s", tmp_path.c_str()));
+		}
+		return "download failed";
+	}
+	try
+	{
+		std::filesystem::rename(tmp_path, save_path.c_str());
+	}
+	catch (std::filesystem::filesystem_error &e)
+	{
+		return common::string_format("failed to rename the file with error:%s", e.what());
+	}
+	return "";
 }
 bool filesync::FileSync::download_file(File &file)
 {

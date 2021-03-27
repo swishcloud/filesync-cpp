@@ -37,6 +37,7 @@ namespace filesync
 	class FileSync;
 	class tcp_client;
 	struct File;
+	class ServerFile;
 } // namespace filesync
 class filesync::FileSync
 {
@@ -90,7 +91,9 @@ public:
 	~FileSync();
 	void connect();
 	bool download_file(File &file);
+	std::string download_file(std::string server_path, std::string commit_id, std::string save_path);
 	std::vector<File> get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok);
+	std::string get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback);
 	bool get_all_server_files();
 	std::vector<filesync::File> files;
 	std::unordered_map<const char *, int, hasher, keyeq> files_map;
@@ -119,5 +122,16 @@ public:
 	std::string server_path;
 	std::string commit_id;
 	bool is_directory;
+};
+class filesync::ServerFile
+{
+private:
+public:
+	std::string name;
+	bool is_directory;
+	std::string md5;
+	std::size_t size;
+	std::string commit_id;
+	std::string path;
 };
 #endif
