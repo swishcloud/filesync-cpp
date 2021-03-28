@@ -11,14 +11,14 @@ namespace filesync
             if (!error)
             {
                 common::print_debug("Received a client message.");
-                this->process_message(session, msg, [this, session](std::string error) {
-                    if (error.empty())
+                this->process_message(session, msg, [this, session](common::error error) {
+                    if (!error)
                     {
                         receive(session);
                     }
                     else
                     {
-                        common::print_debug(common::string_format("Error processing message:%s", error.c_str()));
+                        common::print_debug(common::string_format("Error processing message:%s", error.message()));
                         this->tcp_server.remove_session(session);
                     }
                 });
@@ -37,7 +37,7 @@ namespace filesync
             receive(session);
         };
     }
-    void server::process_message(XTCP::tcp_session *session, XTCP::message &msg, std::function<void(std::string error)> cb)
+    void server::process_message(XTCP::tcp_session *session, XTCP::message &msg, std::function<void(common::error error)> cb)
     {
         try
         {
@@ -117,7 +117,7 @@ namespace filesync
             return;
         }
         s->async_read_chunk(
-            msg.body_size, [written, msg, this, s, os](int len, std::string error, bool finished) {
+            msg.body_size, [written, msg, this, s, os](int len, common::error error, bool finished) {
                 *written.get() += len;
                 if (!error.empty())
                 {
