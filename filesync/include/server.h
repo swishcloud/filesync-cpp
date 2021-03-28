@@ -46,7 +46,7 @@ namespace filesync
         ~server();
         void listen();
         void receive(XTCP::tcp_session *s);
-        void async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s);
+        void async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s, std::function<void(common::error error)> cb);
     };
     class tcp_client
     {

@@ -46,7 +46,7 @@ namespace filesync
             switch (msg.msg_type)
             {
             case static_cast<int>(filesync::tcp::MsgType::UploadFile):
-                async_receive_file_v2(msg, session);
+                async_receive_file_v2(msg, session, cb);
                 break;
             case static_cast<int>(filesync::tcp::MsgType::Download_File):
                 std::string file_path = this->get_file_path(msg.getHeaderValue<std::string>("path"));
@@ -156,9 +156,8 @@ namespace filesync
                 }
             });*/
     }
-    void server::async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s)
+    void server::async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s, std::function<void(common::error error)> cb)
     {
-        std::function<void(std::string err)> cb;
         std::shared_ptr<int> written{new int{}};
         std::string block_path = get_block_path(boost::uuids::to_string(boost::uuids::random_generator()()));
         std::shared_ptr<std::ofstream> os{new std::ofstream{block_path, std::ios_base::binary}};
@@ -339,6 +338,7 @@ namespace filesync
     }
     void tcp_client::send_file(std::string path, size_t offset)
     {
+        return;
         auto msg = XTCP::message{};
         msg.msg_type = static_cast<int>(filesync::tcp::MsgType::File);
         msg.body_size = common::file_size(path);
