@@ -172,7 +172,7 @@ int main(int argc, char *argv[])
 				bool has_downloaded = false;
 				if (std::filesystem::exists(exported_path))
 				{
-					auto md5 = filesync::file_md5(exported_path.c_str());
+					auto md5 = common::file_md5(exported_path.c_str());
 					if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
 					{
 						has_downloaded = true;
@@ -484,12 +484,12 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				bool need_upload = false;
 				if (file_db.get()->count == 0)
 				{ //this is a added local file to be upload.
-					md5 = file_md5(path);
+					md5 = common::file_md5(path);
 					need_upload = true;
 				}
 				else
 				{
-					md5 = file_md5(path);
+					md5 = common::file_md5(path);
 					const char *server_md5 = file_db.get()->get_value("md5");
 					const char *local_md5 = file_db.get()->get_value("local_md5");
 					if (!compare_md5(md5.c_str(), local_md5 ? local_md5 : server_md5))
@@ -577,7 +577,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 		v = format_path(v);
 		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
 		auto file_db = db.get_file(relative_path);
-		std::string md5 = file_md5(v.c_str());
+		std::string md5 = common::file_md5(v.c_str());
 		if (file_db.get()->count == 1)
 		{
 			const char *server_md5 = file_db.get()->get_value("md5");
@@ -830,7 +830,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	}
 	os->flush();
 	os->close();
-	if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+	if (!filesync::compare_md5(common::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
 	{
 		auto err = common::string_format("Download a file with wrong MD5,deleting it...");
 		common::print_info(err);
@@ -842,7 +842,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	}
 	try
 	{
-		std::filesystem::rename(tmp_path, save_path.c_str());
+		common::movebycmd(tmp_path, save_path);
 	}
 	catch (std::filesystem::filesystem_error &e)
 	{
@@ -880,7 +880,7 @@ bool filesync::FileSync::download_file(File &file)
 	assert(db_file.get()->count > 0);
 	bool is_downloaded = false;
 
-	if (std::filesystem::exists(file.full_path) && compare_md5(md5.get<std::string>().c_str(), filesync::file_md5(file.full_path.c_str()).c_str()))
+	if (std::filesystem::exists(file.full_path) && compare_md5(md5.get<std::string>().c_str(), common::file_md5(file.full_path.c_str()).c_str()))
 	{
 		is_downloaded = true;
 	}
@@ -937,7 +937,7 @@ bool filesync::FileSync::download_file(File &file)
 		}
 		os->flush();
 		os->close();
-		if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+		if (!filesync::compare_md5(common::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
 		{
 			filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it...", file.server_path.c_str()));
 			if (!std::filesystem::remove(tmp_path))

@@ -33,6 +33,7 @@ namespace filesync
     server::server(short port, std::string file_location, common::http_client &http_client) : tcp_server{port}, ip{"0.0.0.0"}, port{port}, file_location{file_location}, http_client{http_client}
     {
         tcp_server.on_accepted = [this](XTCP::tcp_session *session, XTCP::tcp_server *server) {
+            session->timeout = 60 * 5;
             filesync::print_info("accepted a client connection.");
             receive(session);
         };
@@ -55,7 +56,7 @@ namespace filesync
                 }
                 auto msg = XTCP::message{};
                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
-                msg.body_size = filesync::file_size(file_path);
+                msg.body_size = common::file_size(file_path);
                 XTCP::send_message(session, msg, [file_path, this, cb, session](common::error error) {
                     if (error)
                     {
@@ -137,7 +138,7 @@ namespace filesync
                 {
                     os.get()->close();
                     std::cout << common::string_format("received a file,with %d bytes", msg.body_size) << std::endl;
-                    std::string md5 = filesync::file_md5(this->get_file_path(msg.getHeaderValue<std::string>("file_name")).c_str());
+                    std::string md5 = common::file_md5(this->get_file_path(msg.getHeaderValue<std::string>("file_name")).c_str());
                     std::string expected_md5 = msg.getHeaderValue<std::string>("md5");
                     if (md5 != expected_md5)
                     {
@@ -255,9 +256,9 @@ namespace filesync
                                 }
                             }
                             result_os.close();
-                            if (filesync::file_md5(tmp_path.c_str()) == md5)
+                            if (common::file_md5(tmp_path.c_str()) == md5)
                             {
-                                filesync::movebycmd(tmp_path, this->get_file_path(file_path));
+                                common::movebycmd(tmp_path, this->get_file_path(file_path));
                                 http::UrlValues values;
                                 values.add("server_file_id", server_file_id.c_str());
                                 this->http_client.PUT("/api/file", values.str, access_token);
@@ -317,12 +318,14 @@ namespace filesync
     //begin client
     tcp_client::tcp_client(std::string server_host, std::string server_port) : server_host{server_host}, server_port{server_port}, closed{false}
     {
+        xclient.session.timeout = 60 * 5;
     }
     tcp_client::~tcp_client()
     {
     }
     bool tcp_client::connect()
     {
+
         filesync::print_info(common::string_format("tcp connecting %s:%s", this->server_host.c_str(), this->server_port.c_str()));
         std::promise<bool> promise;
         std::future<bool> future = promise.get_future();
@@ -338,8 +341,8 @@ namespace filesync
     {
         auto msg = XTCP::message{};
         msg.msg_type = static_cast<int>(filesync::tcp::MsgType::File);
-        msg.body_size = filesync::file_size(path);
-        msg.addHeader({"md5", filesync::file_md5(path.c_str())});
+        msg.body_size = common::file_size(path);
+        msg.addHeader({"md5", common::file_md5(path.c_str())});
         msg.addHeader({"file_name", filesync::file_name(path.c_str())});
         XTCP::send_message(&this->xclient.session, msg, NULL);
         std::shared_ptr<std::istream> fs{new std::ifstream(path, std::ios::binary)};
