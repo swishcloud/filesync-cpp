@@ -159,7 +159,8 @@ int main(int argc, char *argv[])
 			filesync->connect();
 			std::string first_server_path = path;
 			std::string export_directory_path = destination_folder;
-			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [first_server_path, export_directory_path, filesync](filesync::ServerFile &file) {
+			std::vector<std::string> failed_paths;
+			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file) {
 				auto relative_path = common::get_relative_path(first_server_path, file.path);
 				auto exported_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path) / relative_path).string();
 				if (file.is_directory)
@@ -168,11 +169,26 @@ int main(int argc, char *argv[])
 					common::makedir(exported_path);
 					return;
 				}
-				common::print_info(common::string_format("download server file:%s", file.path.c_str()));
-				auto error = filesync->download_file(file.path, file.commit_id, exported_path);
-				if (!error.empty())
+				bool has_downloaded = false;
+				if (std::filesystem::exists(exported_path))
 				{
-					common::print_info(error);
+					auto md5 = filesync::file_md5(exported_path.c_str());
+					if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
+					{
+						has_downloaded = true;
+					}
+				}
+				if (has_downloaded)
+				{
+					common::print_info(common::string_format("%s already exists", exported_path.c_str()));
+					return;
+				}
+				common::error err = filesync->download_file(file.path, file.commit_id, exported_path);
+				if (err)
+				{
+					filesync->destroy_tcp_client();
+					common::print_info(err.message());
+					failed_paths.push_back(exported_path);
 				}
 			});
 			if (!error.empty())
@@ -180,8 +196,20 @@ int main(int argc, char *argv[])
 				common::print_info(error);
 				exit(1);
 			}
-			common::print_info("Already exported all files.");
-			return 0;
+			if (failed_paths.size() == 0)
+			{
+				common::print_info("Already exported all files.");
+				return 0;
+			}
+			else
+			{
+				common::print_info("the following paths are not exported successfully:");
+				for (auto i : failed_paths)
+				{
+					std::cout << "FAIL:" << i << std::endl;
+				}
+				return 1;
+			}
 		}
 	}
 	try
@@ -261,13 +289,17 @@ int main(int argc, char *argv[])
 }
 std::string filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback)
 {
-	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
 	std::unique_ptr<char[]> token{get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
-	do
+	while (1)
 	{
 		c.GET();
-	} while (!c.error.empty());
+		if (c.error)
+			common::print_info(c.error.message());
+		else
+			break;
+	}
 	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	if (!err.is_null())
@@ -313,9 +345,18 @@ void filesync::FileSync::connect()
 		char *token = get_token();
 		msg.addHeader({"token", token});
 		delete[](token);
-		XTCP::send_message(&tcp_client.xclient.session, msg, NULL);
+		common::error err;
+		XTCP::send_message(&tcp_client.xclient.session, msg, err);
+		if (err)
+		{
+			throw common::exception(err.message());
+		}
 		XTCP::message reply;
-		XTCP::read_message(&tcp_client.xclient.session, reply, NULL);
+		XTCP::read_message(&tcp_client.xclient.session, reply, err);
+		if (err)
+		{
+			throw common::exception(err.message());
+		}
 		if (!reply)
 		{
 			throw common::exception("connection failed");
@@ -394,14 +435,15 @@ bool filesync::FileSync::sync_server()
 		}
 		else
 		{
-			//check if the file has not been downloaded or the file has out of date, if it's in either case then download/re-download the file.
+			//check if the file has not been downloaded or the file is out of date, if it's in either case then download/re-download the file.
 			if (local_md5 == NULL || !compare_md5(md5, local_md5))
 			{
-				if (!this->download_file(f))
+				common::error err = this->download_file(f.server_path, f.commit_id, f.full_path);
+				if (!err)
 				{
-					std::string err = common::string_format("Failed to download file:%s", file_name);
-					std::cout << err << std::endl;
-					errs.push_back(err);
+					destroy_tcp_client();
+					common::print_info(common::string_format("Downloading failed:%s", err.message()));
+					errs.push_back(err.message());
 				}
 			}
 		}
@@ -578,17 +620,17 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
 	c.GET();
 	delete[](token);
-	if (!c.error.empty())
-
+	if (!c.error)
 	{
+		common::print_info(c.error.message());
 		return false;
 	}
 	auto j = json::parse(c.resp_text);
-	auto err = j["error"];
 	auto data = j["data"];
-	if (!err.is_null())
+	if (!j["error"].is_null())
 	{
-		std::cout << "Error:" << err << std::endl;
+		common::print_info(common::string_format("Failed to get file info from web server:%s", j["error"].get<std::string>().c_str()));
+		return false;
 	}
 	else
 	{
@@ -621,7 +663,13 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	msg.addHeader({TokenHeaderKey, token});
 	delete[](token);
 	msg.body_size = std::stoi(file_size) - std::stoi(uploaded_size);
-	XTCP::send_message(&tcp_client->xclient.session, msg, NULL);
+	common::error err;
+	XTCP::send_message(&tcp_client->xclient.session, msg, err);
+	if (err)
+	{
+		common::print_info(common::string_format("UPLOAD failed %s", err.message()));
+		return false;
+	}
 	std::shared_ptr<std::istream> fs{new std::ifstream(full_path, std::ios::binary)};
 	fs->seekg(std::stoi(uploaded_size), std::ios_base::beg);
 	if (!*fs)
@@ -629,30 +677,37 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		common::print_info(common::string_format("can not open %s", full_path.c_str()));
 		return false;
 	}
-	std::promise<bool> promise;
+	common::print_info(common::string_format("uploading file %s...", full_path.c_str()));
+	std::promise<common::error> promise;
 	tcp_client->xclient.session.send_stream(
-		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
+		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
 			if (error || completed)
 			{
-				promise.set_value(!error);
+				promise.set_value(error);
 			}
 		},
 		NULL);
-	bool upload_res = promise.get_future().get();
-	common::print_info(common::string_format("Upload %s:%s", upload_res ? "OK" : "Failed", full_path.c_str()));
-	if (!upload_res)
+	err = promise.get_future().get();
+	if (err)
 	{
+		common::print_info(err.message());
 		return false;
 	}
+	common::print_info(common::string_format("waiting for server replying..."));
 	XTCP::message reply;
-	XTCP::read_message(&tcp_client->xclient.session, reply, NULL);
+	XTCP::read_message(&tcp_client->xclient.session, reply, err);
+	if (err)
+	{
+		common::print_info(common::string_format("UPLOAD failed %s", err.message()));
+		return false;
+	}
 	if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
 	{
 		return true;
 	}
 	else
 	{
-		filesync::print_info(common::string_format("Failed to upload %s", full_path.c_str()));
+		filesync::print_info(common::string_format("invalid msg type."));
 		return false;
 	}
 }
@@ -691,23 +746,28 @@ filesync::tcp_client *filesync::FileSync::get_tcp_client()
 	}
 	return this->_tcp_client;
 }
-std::string filesync::FileSync::download_file(std::string server_path, std::string commit_id, std::string save_path)
+void filesync::FileSync::destroy_tcp_client()
+{
+	common::print_debug("destroying tcp client.");
+	delete _tcp_client;
+	_tcp_client = NULL;
+};
+common::error filesync::FileSync::download_file(std::string server_path, std::string commit_id, std::string save_path)
 {
 	tcp_client *tcp_client = this->get_tcp_client();
-	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", url_encode(server_path.c_str()).c_str(), commit_id.c_str());
+	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", common::url_encode(server_path.c_str()).c_str(), commit_id.c_str());
 	std::unique_ptr<char[]> token{filesync::get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
 	c.GET();
-	if (!c.error.empty())
+	if (c.error)
 	{
 		return c.error;
 	}
 	auto j = json::parse(c.resp_text);
-	auto err = j["error"];
 	auto data = j["data"];
-	if (!err.is_null())
+	if (!j["error"].is_null())
 	{
-		return err;
+		return j["error"].get<std::string>();
 	}
 	auto ip = data["Ip"];
 	auto port = data["Port"];
@@ -719,15 +779,22 @@ std::string filesync::FileSync::download_file(std::string server_path, std::stri
 	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 	msg.addHeader({"path", path.get<std::string>()});
 	msg.addHeader({TokenHeaderKey, token.get()});
-	XTCP::send_message(&tcp_client->xclient.session, msg, NULL);
+	common::error err;
+	XTCP::send_message(&tcp_client->xclient.session, msg, err);
+	if (err)
+	{
+		return common::string_format("DOWNLOAD failed %s", err.message());
+	}
 	XTCP::message reply;
-	XTCP::read_message(&tcp_client->xclient.session, reply, NULL);
+	XTCP::read_message(&tcp_client->xclient.session, reply, err);
+	if (err)
+	{
+		return common::string_format("DOWNLOAD failed %s", err.message());
+	}
 	if (!reply)
 	{
 		return "file server have no response";
 	}
-	std::promise<bool> promise;
-	std::future<bool> future = promise.get_future();
 	std::error_code ec;
 	std::string tmp_dir = this->conf.get_tmp_dir(ec);
 	if (ec)
@@ -741,33 +808,37 @@ std::string filesync::FileSync::download_file(std::string server_path, std::stri
 		return common::string_format("failed to create a file named %s", tmp_path.c_str());
 	}
 	common::print_debug(common::string_format("temporary file:%s", tmp_path.c_str()));
-	std::promise<std::string> dl_promise;
+	std::promise<common::error> dl_promise;
+	size_t written;
+	common::print_info(common::string_format("Downloading %s", save_path.c_str()));
 	tcp_client->xclient.session.receive_stream(
-		os, reply.body_size, [&dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, const char *error, void *p) {
-			if (completed)
-			{
-				dl_promise.set_value("");
-			}
-			else if (error)
+		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+			written += read_size;
+			auto percentage = (double)(written) / reply.body_size * 100;
+			std::cout << common::string_format("\rreceived %d/%d bytes, %.2f%%", written, reply.body_size, percentage);
+			if (completed || error)
 			{
 				dl_promise.set_value(error);
+				std::cout << '\n';
 			}
 		},
 		NULL);
-	if (!dl_promise.get_future().get().empty())
+	err = dl_promise.get_future().get();
+	if (err)
 	{
-		return dl_promise.get_future().get();
+		return common::string_format("DOWNLOAD failed %s", err.message());
 	}
 	os->flush();
 	os->close();
 	if (!filesync::compare_md5(filesync::file_md5(tmp_path.c_str()).c_str(), md5.get<std::string>().c_str()))
 	{
-		filesync::print_info(common::string_format("Download a file with wrong MD5,deleting it..."));
+		auto err = common::string_format("Download a file with wrong MD5,deleting it...");
+		common::print_info(err);
 		if (!std::filesystem::remove(tmp_path))
 		{
 			filesync::print_info(common::string_format("WARNING!failed to delete the temp file %s", tmp_path.c_str()));
 		}
-		return "download failed";
+		return err;
 	}
 	try
 	{
@@ -777,8 +848,9 @@ std::string filesync::FileSync::download_file(std::string server_path, std::stri
 	{
 		return common::string_format("failed to rename the file with error:%s", e.what());
 	}
-	return "";
+	return NULL;
 }
+/*
 bool filesync::FileSync::download_file(File &file)
 {
 	tcp_client *tcp_client = this->get_tcp_client();
@@ -891,18 +963,23 @@ bool filesync::FileSync::download_file(File &file)
 	}
 	return is_downloaded;
 }
+*/
 std::vector<filesync::File> filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok)
 {
 	std::vector<filesync::File> files;
 	std::cout << path << std::endl;
-	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
 
 	std::unique_ptr<char[]> token{get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
-	do
+	while (1)
 	{
 		c.GET();
-	} while (!c.error.empty());
+		if (c.error)
+			common::print_info(c.error.message());
+		else
+			break;
+	}
 	auto j = json::parse(c.resp_text);
 	auto err = j["error"];
 	if (!err.is_null())
@@ -1068,7 +1145,7 @@ start:
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), std::string(token)};
 	c.GET();
 	delete[](token);
-	if (!c.error.empty())
+	if (c.error)
 	{
 		print_info("http get failed");
 		return false;

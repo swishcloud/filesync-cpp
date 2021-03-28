@@ -90,8 +90,7 @@ public:
 	FileSync(char *server_location);
 	~FileSync();
 	void connect();
-	bool download_file(File &file);
-	std::string download_file(std::string server_path, std::string commit_id, std::string save_path);
+	common::error download_file(std::string server_path, std::string commit_id, std::string save_path);
 	std::vector<File> get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok);
 	std::string get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback);
 	bool get_all_server_files();
@@ -111,6 +110,7 @@ public:
 	common::monitor::change *get_local_file_change();
 	bool clear_errs();
 	filesync::tcp_client *get_tcp_client();
+	void destroy_tcp_client();
 };
 struct filesync::File
 {
