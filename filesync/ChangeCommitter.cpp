@@ -57,15 +57,15 @@ bool filesync::ChangeCommitter::commit()
 		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token};
 		c.POST(post_data);
 		delete[] token;
-		if (!c.error.empty())
-
+		if (c.error)
 		{
+			common::print_info(c.error.message());
 			return false;
 		}
 		auto j = json::parse(c.resp_text);
 		if (!j["error"].is_null())
 		{
-			std::cout << "error posting files to server:" << j["error"] << std::endl;
+			common::print_info(common::string_format("error posting files to server:%s", j["error"].get<std::string>()));
 		}
 	}
 

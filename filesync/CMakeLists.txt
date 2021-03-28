@@ -8,7 +8,7 @@ find_package(openssl REQUIRED)
 find_package(Boost REQUIRED COMPONENTS date_time locale regex thread)
 find_package(nlohmann_json 3.2.0 REQUIRED)
 # Add source to this project's executable.
-add_executable (filesync "filesync.cpp" "db_manager.cpp" "http.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp")
+add_executable (filesync "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp")
 if (MSVC)
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>" "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
     set(CMAKE_EXE_LINKER_FLAGS "")
