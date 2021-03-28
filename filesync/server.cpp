@@ -56,8 +56,8 @@ namespace filesync
                 auto msg = XTCP::message{};
                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
                 msg.body_size = filesync::file_size(file_path);
-                XTCP::send_message(session, msg, [file_path, this, cb, session](bool success) {
-                    if (!success)
+                XTCP::send_message(session, msg, [file_path, this, cb, session](common::error error) {
+                    if (error)
                     {
                         cb("Faile to send a reply mssage.");
                         return;
