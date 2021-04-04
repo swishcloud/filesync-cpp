@@ -7,25 +7,27 @@ namespace filesync
     void server::receive(XTCP::tcp_session *session)
     {
         XTCP::message msg;
+        common::print_debug("reading client message...");
         XTCP::read_message(session, [this, session](common::error error, XTCP::message &msg) {
             if (!error)
             {
-                common::print_debug("Received a client message.");
+                common::print_debug("Received a client message,processing...");
                 this->process_message(session, msg, [this, session](common::error error) {
                     if (!error)
                     {
+                        common::print_debug(common::string_format("processed a client message successfully."));
                         receive(session);
                     }
                     else
                     {
-                        common::print_debug(common::string_format("Error processing message:%s", error.message()));
+                        common::print_debug(common::string_format("Error processing message:%s,removing this session...", error.message()));
                         this->tcp_server.remove_session(session);
                     }
                 });
             }
             else
             {
-                common::print_debug(common::string_format("Error reading message:%s", error.message()));
+                common::print_debug(common::string_format("Error reading message:%s,removing this session...", error.message()));
                 this->tcp_server.remove_session(session);
             }
         });
@@ -159,15 +161,16 @@ namespace filesync
     void server::async_receive_file_v2(XTCP::message &msg, XTCP::tcp_session *s, std::function<void(common::error error)> cb)
     {
         std::shared_ptr<int> written{new int{}};
+        filesync::print_debug("creating a block file");
         std::string block_path = get_block_path(boost::uuids::to_string(boost::uuids::random_generator()()));
         std::shared_ptr<std::ofstream> os{new std::ofstream{block_path, std::ios_base::binary}};
-        if (!os.get()->is_open())
+        if (!*os)
         {
-            auto err = common::string_format("error opening file %s", block_path.c_str());
+            auto err = common::string_format("error creating a block file %s", block_path.c_str());
             cb(err);
             return;
         }
-        filesync::print_debug("processing file message uploaded by client.");
+        filesync::print_debug("reading bytes into just created block file");
         //receive file
         s->read(
             msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
@@ -179,42 +182,44 @@ namespace filesync
                     size_t uploaded_size = msg.getHeaderValue<size_t>("uploaded_size");
                     std::string server_file_id = msg.getHeaderValue<std::string>("server_file_id");
                     std::string access_token = msg.getHeaderValue<std::string>(TokenHeaderKey);
-                    *written.get() += read_size;
-
-                    filesync::print_debug(common::string_format("received %d/%d bytes", *written.get(), msg.body_size));
-                    os.get()->write(s->buffer.get(), read_size);
-                    if (os.get()->bad())
+                    *written += read_size;
+                    os->write(s->buffer.get(), read_size);
+                    if (!*os)
                     {
-                        throw common::exception("failed to write file");
+                        throw common::exception("failed to write the block file");
                     }
 
                     if (error || completed)
                     {
                         os->close();
                         //save the block record
-                        if (*written.get() > 0)
+                        if (*written > 0)
                         {
+                            filesync::print_debug(common::string_format("posting a block file record with %d bytes to web server", *written));
                             std::string url_path = common::string_format("/api/file-block");
                             http::UrlValues values;
                             values.add("server_file_id", server_file_id.c_str());
                             values.add("name", filesync::file_name(block_path.c_str()));
                             values.add("start", uploaded_size);
-                            values.add("end", *written.get() + uploaded_size);
+                            values.add("end", *written + uploaded_size);
                             this->http_client.POST(url_path, values.str, access_token);
                         }
 
                         if (error)
                         {
-                            throw common::exception(common::string_format("async_receive_file_v2 failed with error:", error));
+                            throw common::exception(common::string_format("failed to read bytes into the block file with error:", error));
                         }
                         else if (completed)
                         {
                             //assemble file
+                            filesync::print_debug("assembling a result file");
                             http::UrlValues values;
                             values.add("server_file_id", server_file_id.c_str());
                             this->http_client.GET("/api/file-block", values.str, access_token);
-                            std::cout << this->http_client.resp_text << std::endl;
-
+                            if (this->http_client.error)
+                            {
+                                throw common::exception(this->http_client.error.message());
+                            }
                             json resp = json::parse(this->http_client.resp_text);
                             if (!resp["error"].empty())
                             {
@@ -249,7 +254,7 @@ namespace filesync
                                 filesync::print_debug(common::string_format("offset of intermediate file:%d", result_os.tellp()));
                                 result_os << block_is.rdbuf();
                                 block_is.close();
-                                if (result_os.bad())
+                                if (!result_os)
                                 {
                                     throw common::exception(common::string_format("failed to write file %s", tmp_path.c_str()));
                                 }
