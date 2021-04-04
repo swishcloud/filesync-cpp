@@ -680,7 +680,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	common::print_info(common::string_format("uploading file %s...", full_path.c_str()));
 	std::promise<common::error> promise;
 	tcp_client->xclient.session.send_stream(
-		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
+		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
 			if (error || completed)
 			{
 				promise.set_value(error);
@@ -812,7 +812,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	size_t written{0};
 	common::print_info(common::string_format("Downloading %s", save_path.c_str()));
 	tcp_client->xclient.session.receive_stream(
-		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
+		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
 			written += read_size;
 			auto percentage = (double)(written) / reply.body_size * 100;
 			std::cout << common::string_format("\rreceived %d/%d bytes, %.2f%%", written, reply.body_size, percentage);
