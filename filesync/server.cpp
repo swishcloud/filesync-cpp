@@ -67,7 +67,7 @@ namespace filesync
                     }
                     std::shared_ptr<std::istream> fs{new std::ifstream{file_path, std::ios_base::binary}};
                     session->send_stream(
-                        fs, [this, cb](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+                        fs, [this, cb](size_t written_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
                             if (completed)
                             {
                                 cb(NULL);
@@ -173,7 +173,7 @@ namespace filesync
         filesync::print_debug("reading bytes into just created block file");
         //receive file
         s->read(
-            msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+            msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
                 try
                 {
                     std::string file_path = msg.getHeaderValue<std::string>("path");
@@ -298,8 +298,8 @@ namespace filesync
                 }
                 catch (const std::exception &e)
                 {
-                    auto err = common::string_format("Closing socket,error:%s", e.what());
-                    cb(err);
+                    error = common::string_format("Closing socket,error:%s", e.what());
+                    cb(error);
                 }
             },
             NULL);

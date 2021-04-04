@@ -439,7 +439,7 @@ bool filesync::FileSync::sync_server()
 			if (local_md5 == NULL || !compare_md5(md5, local_md5))
 			{
 				common::error err = this->download_file(f.server_path, f.commit_id, f.full_path);
-				if (!err)
+				if (err)
 				{
 					destroy_tcp_client();
 					common::print_info(common::string_format("Downloading failed:%s", err.message()));
@@ -620,7 +620,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token};
 	c.GET();
 	delete[](token);
-	if (!c.error)
+	if (c.error)
 	{
 		common::print_info(c.error.message());
 		return false;
@@ -680,7 +680,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	common::print_info(common::string_format("uploading file %s...", full_path.c_str()));
 	std::promise<common::error> promise;
 	tcp_client->xclient.session.send_stream(
-		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
 			if (error || completed)
 			{
 				promise.set_value(error);
@@ -809,10 +809,10 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	}
 	common::print_debug(common::string_format("temporary file:%s", tmp_path.c_str()));
 	std::promise<common::error> dl_promise;
-	size_t written;
+	size_t written{0};
 	common::print_info(common::string_format("Downloading %s", save_path.c_str()));
 	tcp_client->xclient.session.receive_stream(
-		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error &error, void *p) {
 			written += read_size;
 			auto percentage = (double)(written) / reply.body_size * 100;
 			std::cout << common::string_format("\rreceived %d/%d bytes, %.2f%%", written, reply.body_size, percentage);
