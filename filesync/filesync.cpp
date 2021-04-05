@@ -438,12 +438,33 @@ bool filesync::FileSync::sync_server()
 			//check if the file has not been downloaded or the file is out of date, if it's in either case then download/re-download the file.
 			if (local_md5 == NULL || !compare_md5(md5, local_md5))
 			{
-				common::error err = this->download_file(f.server_path, f.commit_id, f.full_path);
-				if (err)
+				bool has_downloaded = false;
+				if (std::filesystem::exists(f.full_path))
 				{
-					destroy_tcp_client();
-					common::print_info(common::string_format("Downloading failed:%s", err.message()));
-					errs.push_back(err.message());
+					auto file_md5 = common::file_md5(f.full_path.c_str());
+					if (filesync::compare_md5(file_md5.c_str(), md5))
+					{
+						has_downloaded = true;
+					}
+				}
+				if (has_downloaded)
+				{
+					common::print_info(common::string_format("%s already exists", f.full_path.c_str()));
+					this->db.update_local_md5(f.server_path.c_str(), md5);
+				}
+				else
+				{
+					common::error err = this->download_file(f.server_path, f.commit_id, f.full_path);
+					if (err)
+					{
+						destroy_tcp_client();
+						common::print_info(common::string_format("Downloading failed:%s", err.message()));
+						errs.push_back(err.message());
+					}
+					else
+					{
+						this->db.update_local_md5(f.server_path.c_str(), md5);
+					}
 				}
 			}
 		}
