@@ -1,5 +1,6 @@
 #include <cfg.h>
 #include <filesystem>
+#include <regex>
 filesync::CONFIG::~CONFIG()
 {
 }
@@ -85,12 +86,17 @@ void filesync::PartitionConf::init(bool debug_mode)
 	std::ifstream in(partition_cfg_path);
 	if (in.is_open())
 	{
-		std::string json_str;
-		in >> json_str;
-		in.close();
-		json j = json::parse(json_str);
+		json j = json::parse(in);
 		this->commit_id = j["commit_id"].get<std::string>();
 		this->sync_path = j["sync_path"].get<std::string>();
+		auto monitor_paths = !j["monitor_paths"].is_null() ? j["monitor_paths"].get<std::string>() : "";
+		std::smatch m;
+		std::regex reg{"/[^:]+"};
+		while (std::regex_search(monitor_paths, m, reg))
+		{
+			this->monitor_paths.push_back(m[0]);
+			monitor_paths = m.suffix();
+		}
 	}
 }
 
@@ -99,6 +105,13 @@ void filesync::PartitionConf::save()
 	json j;
 	j["commit_id"] = this->commit_id;
 	j["sync_path"] = this->sync_path;
+	std::string monitor_paths;
+	for (auto v : this->monitor_paths)
+	{
+		monitor_paths += v + ":";
+	}
+	monitor_paths = monitor_paths.substr(0, monitor_paths.size() - 1);
+	j["monitor_paths"] = monitor_paths;
 	std::ofstream out(this->partition_cfg_path);
 	if (out.bad())
 	{

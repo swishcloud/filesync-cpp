@@ -111,6 +111,7 @@ public:
 	bool clear_errs();
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
+	bool monitor_path(std::string path);
 };
 struct filesync::File
 {

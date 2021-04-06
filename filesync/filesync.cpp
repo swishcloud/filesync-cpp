@@ -146,7 +146,13 @@ int main(int argc, char *argv[])
 			commit_id = std::string(commit_id) == "/" ? "" : commit_id;
 			if (!std::filesystem::exists(destination_folder))
 			{
-				std::filesystem::create_directory(destination_folder);
+				std::error_code ec;
+				std::filesystem::create_directory(destination_folder, ec);
+				if (ec)
+				{
+					common::print_info(ec.message());
+					return 1;
+				}
 			}
 			else
 			{
@@ -159,10 +165,12 @@ int main(int argc, char *argv[])
 			filesync->connect();
 			std::string first_server_path = path;
 			std::string export_directory_path = destination_folder;
+			export_directory_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path)).string();
+			common::makedir(export_directory_path);
 			std::vector<std::string> failed_paths;
 			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file) {
 				auto relative_path = common::get_relative_path(first_server_path, file.path);
-				auto exported_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path) / relative_path).string();
+				auto exported_path = (std::filesystem::path{export_directory_path} / relative_path).string();
 				if (file.is_directory)
 				{
 					common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
@@ -404,7 +412,11 @@ bool filesync::FileSync::sync_server()
 
 		//struct File object
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
-
+		if (!this->monitor_path(f.server_path))
+		{
+			common::print_debug(common::string_format("Skip Non-monitored path:%s", f.server_path.c_str()));
+			continue;
+		}
 		//check if server has delete the file, if yes then delete the file locally, and hard delete the file from db
 		if (is_deleted)
 		{
@@ -488,7 +500,11 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			{
 				this->sync_local_added_or_modified(filesync::format_path(v.c_str()).c_str());
 			}
-
+			if (!this->monitor_path(relative_path))
+			{
+				common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+				return true;
+			}
 			if (file_db.get()->count == 0)
 			{
 				filesync::create_directory_action *action = new filesync::create_directory_action();
@@ -499,6 +515,11 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 		}
 		else
 		{
+			if (!this->monitor_path(relative_path))
+			{
+				common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+				return true;
+			}
 			try
 			{
 				std::string md5;
@@ -576,7 +597,12 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		bool is_deleted = is_deleted_str[0] == '1';
 		bool is_directory = md5 == NULL;
 		auto full_path = get_full_path(file_name);
-
+		auto relative_path = this->get_relative_path_by_fulllpath(full_path);
+		if (!this->monitor_path(relative_path))
+		{
+			common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+			continue;
+		}
 		if (local_md5 && !std::filesystem::exists(full_path))
 		{ //this file has been deleted locally.
 			delete_by_path_action *action = new delete_by_path_action();
@@ -773,6 +799,16 @@ void filesync::FileSync::destroy_tcp_client()
 	delete _tcp_client;
 	_tcp_client = NULL;
 };
+bool filesync::FileSync::monitor_path(std::string path)
+{
+	for (auto v : this->conf.monitor_paths)
+	{
+		if (strcmp(v.c_str(), common::strcpy(path.c_str(), v.size())) == 0)
+		{
+			return true;
+		}
+	}
+}
 common::error filesync::FileSync::download_file(std::string server_path, std::string commit_id, std::string save_path)
 {
 	tcp_client *tcp_client = this->get_tcp_client();
@@ -863,6 +899,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	}
 	try
 	{
+		common::makedir(filesync::get_parent_dir(save_path.c_str()));
 		common::movebycmd(tmp_path, save_path);
 	}
 	catch (std::filesystem::filesystem_error &e)

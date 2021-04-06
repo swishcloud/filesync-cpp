@@ -6,7 +6,6 @@ namespace filesync
 {
     void server::receive(XTCP::tcp_session *session)
     {
-        XTCP::message msg;
         common::print_debug("reading client message...");
         XTCP::read_message(session, [this, session](common::error error, XTCP::message &msg) {
             if (!error)
@@ -322,7 +321,7 @@ namespace filesync
     //begin client
     tcp_client::tcp_client(std::string server_host, std::string server_port) : server_host{server_host}, server_port{server_port}, closed{false}
     {
-        xclient.session.timeout = 60 * 5;
+        xclient.session.timeout = 60 * 4;
     }
     tcp_client::~tcp_client()
     {
