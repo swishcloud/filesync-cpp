@@ -1351,8 +1351,9 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(const char *re
 char *filesync::get_token()
 {
 #ifdef __linux__
-	system("filesync_old login --insecure");
+
 #endif
+	system("filesync_old login --insecure");
 	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
 	if (!f)
 	{
