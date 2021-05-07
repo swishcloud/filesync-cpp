@@ -71,7 +71,7 @@ private:
 	void to_relative_path(char *path);
 	char *get_full_path(const char *path);
 	char *get_relative_path(const char *server_path);
-	char *get_relative_path_by_fulllpath(const char *path);
+	std::string get_relative_path_by_fulllpath(const char *path);
 	std::filesystem::path relative_to_server_path(const char *relative_path);
 	bool upload_file(std::string full_path, const char *md5, long size);
 	bool upload_file_v2(const char *ip, unsigned short port, std::ifstream &fs, const char *path, const char *md5, long file_size, long uploaded_size, const char *server_file_id);

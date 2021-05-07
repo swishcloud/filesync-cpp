@@ -414,7 +414,8 @@ bool filesync::FileSync::sync_server()
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
 		if (!this->monitor_path(f.server_path))
 		{
-			common::print_debug(common::string_format("Skip Non-monitored path:%s", f.server_path.c_str()));
+			common::print_debug(common::string_format("clearing Non-monitored path in db:%s", f.server_path.c_str()));
+			this->db.delete_file_hard(f.server_path.c_str());
 			continue;
 		}
 		//check if server has delete the file, if yes then delete the file locally, and hard delete the file from db
@@ -487,7 +488,7 @@ bool filesync::FileSync::sync_server()
 bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 {
 	auto relative_path = this->get_relative_path_by_fulllpath(path);
-	auto file_db = db.get_file(relative_path);
+	auto file_db = db.get_file(relative_path.c_str());
 	//filesync::format_path(path);
 
 	if (std::filesystem::exists(path))
@@ -500,16 +501,20 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			{
 				this->sync_local_added_or_modified(filesync::format_path(v.c_str()).c_str());
 			}
+			if (relative_path == "/")
+			{
+				return true;
+			}
 			if (!this->monitor_path(relative_path))
 			{
-				common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+				common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
 				return true;
 			}
 			if (file_db.get()->count == 0)
 			{
 				filesync::create_directory_action *action = new filesync::create_directory_action();
 				action->is_hidden = false;
-				action->path = common::strcpy(relative_path);
+				action->path = common::strcpy(relative_path.c_str());
 				this->committer->add_action(action);
 			}
 		}
@@ -517,7 +522,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 		{
 			if (!this->monitor_path(relative_path))
 			{
-				common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+				common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
 				return true;
 			}
 			try
@@ -548,9 +553,9 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					{
 						create_file_action *action = new create_file_action();
 						action->is_hidden = false;
-						action->location = common::strcpy(get_parent_dir(relative_path).c_str());
+						action->location = common::strcpy(get_parent_dir(relative_path.c_str()).c_str());
 						action->md5 = common::strcpy(md5.c_str());
-						action->name = file_name(relative_path);
+						action->name = file_name(relative_path.c_str());
 						this->committer->add_action(action);
 					}
 					else
@@ -567,7 +572,6 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			}
 		}
 	}
-	delete[](relative_path);
 	return errs.size() == 0;
 }
 bool filesync::FileSync::sync_local_deleted(const char *path)
@@ -582,8 +586,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 	else
 	{
 		auto relative_path = this->get_relative_path_by_fulllpath(path);
-		u_files = this->db.get_file(relative_path);
-		delete[] relative_path;
+		u_files = this->db.get_file(relative_path.c_str());
 		files = u_files.get();
 	}
 
@@ -600,7 +603,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		auto relative_path = this->get_relative_path_by_fulllpath(full_path);
 		if (!this->monitor_path(relative_path))
 		{
-			common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path));
+			common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path.c_str()));
 			continue;
 		}
 		if (local_md5 && !std::filesystem::exists(full_path))
@@ -623,7 +626,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 	{
 		v = format_path(v);
 		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
-		auto file_db = db.get_file(relative_path);
+		auto file_db = db.get_file(relative_path.c_str());
 		std::string md5 = common::file_md5(v.c_str());
 		if (file_db.get()->count == 1)
 		{
@@ -631,7 +634,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 			const char *local_md5 = file_db.get()->get_value("local_md5");
 			if (compare_md5(md5.c_str(), server_md5))
 			{
-				this->db.update_local_md5(relative_path, NULL);
+				this->db.update_local_md5(relative_path.c_str(), NULL);
 				if (!std::filesystem::remove(v.c_str()))
 				{
 					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
@@ -646,12 +649,12 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 	{
 		v = format_path(v);
 		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
-		auto file_db = db.get_file(relative_path);
+		auto file_db = db.get_file(relative_path.c_str());
 		if (file_db.get()->count == 1)
 		{
 			if (std::filesystem::is_empty(v))
 			{
-				this->db.update_local_md5(relative_path, NULL);
+				this->db.update_local_md5(relative_path.c_str(), NULL);
 				if (!std::filesystem::remove(v))
 					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
 			}
@@ -803,11 +806,12 @@ bool filesync::FileSync::monitor_path(std::string path)
 {
 	for (auto v : this->conf.monitor_paths)
 	{
-		if (strcmp(v.c_str(), common::strcpy(path.c_str(), v.size())) == 0)
+		if (strcmp(v.c_str(), common::strcpy(path.c_str(), v.size())) == 0 && (path.size() == v.size() || path[v.size()] == '\\' || path[v.size()] == '/'))
 		{
 			return true;
 		}
 	}
+	return false;
 }
 common::error filesync::FileSync::download_file(std::string server_path, std::string commit_id, std::string save_path)
 {
@@ -1300,24 +1304,26 @@ void filesync::FileSync::to_relative_path(char *path)
 	}
 	path[0] = '\0';
 }
-char *filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
+std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
 {
 	int len = strlen(root_path), result_path_len = strlen(path) - len;
 	if (result_path_len == 0)
 	{
-		return new char[2]{'/', '\0'};
+		return "/";
 	}
 	char *buf = new char[result_path_len + 1];
 	if (memcmp(path, root_path, len) == 0)
 	{
 		memcpy(buf, path + len, result_path_len);
 		buf[result_path_len] = '\0';
-		return buf;
+		std::string path = buf;
+		delete[] buf;
+		return path;
 	}
 	else
 	{
 		delete[](buf);
-		return NULL;
+		return std::string{};
 	}
 }
 char *filesync::FileSync::get_full_path(const char *path)
@@ -1391,7 +1397,6 @@ filesync::File filesync::FileSync::server_file(std::string server_path, std::str
 	f.is_directory = is_directory;
 	auto relative_path = this->get_relative_path_by_fulllpath(f.full_path.c_str());
 	f.relative_path = relative_path;
-	delete[] relative_path;
 	f.server_path = server_path;
 	f.commit_id = commit_id;
 
