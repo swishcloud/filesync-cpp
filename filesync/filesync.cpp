@@ -1124,7 +1124,7 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 		this->db.move(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	case 5: //copy
-		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
+		this->db.copy(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	case 6: //modified
 		this->db.move(source_path.c_str(), path.c_str(), commit_id);

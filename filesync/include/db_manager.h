@@ -65,6 +65,7 @@ public:
 	std::unique_ptr<filesync::sqlite_query_result> fuzzily_query(const char *filename);
 	std::unique_ptr<filesync::sqlite_query_result> get_files();
 	bool move(const char *source_path, const char *dest_path, const char *commit_id);
+	bool copy(const char *source_path, const char *dest_path, const char *commit_id);
 	bool add_file(const char *filename, const char *md5, const char *id);
 	bool delete_file(const char *filename);
 	bool delete_file_hard(const char *filename);

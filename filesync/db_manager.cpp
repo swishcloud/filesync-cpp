@@ -125,8 +125,19 @@ bool filesync::db_manager::move(const char *source_path, const char *dest_path, 
 	{
 		auto file_name = r->get_value("name", i);
 		auto md5 = r->get_value("md5", i);
-		std::cout << file_name << std::endl;
 		delete_file(file_name);
+		auto dest = common::string_format("%s%s", dest_path, file_name + strlen(source_path));
+		add_file(dest.c_str(), md5, id);
+	}
+	return true;
+}
+bool filesync::db_manager::copy(const char *source_path, const char *dest_path, const char *id)
+{
+	auto r = fuzzily_query(source_path);
+	for (int i = 0; i < r->count; i++)
+	{
+		auto file_name = r->get_value("name", i);
+		auto md5 = r->get_value("md5", i);
 		auto dest = common::string_format("%s%s", dest_path, file_name + strlen(source_path));
 		add_file(dest.c_str(), md5, id);
 	}
