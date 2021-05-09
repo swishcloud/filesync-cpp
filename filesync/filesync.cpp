@@ -31,9 +31,11 @@ namespace filesync
 	std::string trim_trailing_space(std::string str)
 	{
 		std::smatch m{};
-		std::regex reg{"([^ ]*) *$"};
-		assert(std::regex_search(str, m, reg));
-		return m[1].str();
+		std::regex reg{".*\\S"};
+		if (std::regex_search(str, m, reg))
+			return m.str(0);
+		else
+			return std::string{};
 	}
 
 	std::string format_path(std::string str)
