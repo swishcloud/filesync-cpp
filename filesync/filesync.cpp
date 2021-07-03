@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
 	auto sync = app.add_subcommand("sync", "syncing everything");
 	auto listen = app.add_subcommand("listen", "listen as a server node");
 	std::string account;
-	sync->add_option("account", account, "your account name")->required();
+	sync->add_option("--account", account, "your account name")->required();
 	sync->callback([&account]()
 				   {
 					   //common::print_info("begin syncing...");
