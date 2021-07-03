@@ -19,7 +19,6 @@
 #include <mutex>
 #include <server.h>
 // TODO: Reference additional headers your program requires here.
-#define TOKEN_FILE_PATH "token"
 namespace filesync
 {
 	enum class FileStatus

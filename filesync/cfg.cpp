@@ -29,9 +29,9 @@ void filesync::CONFIG::load()
 	}
 	else
 	{
-		this->server_ip = "192.168.29.4";
+		this->server_ip = "192.168.1.1";
 		this->server_port = 2002;
-		this->server_tcp_port = 8081;
+		this->server_tcp_port = 2003;
 	}
 
 	save();

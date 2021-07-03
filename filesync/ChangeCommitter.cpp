@@ -65,7 +65,7 @@ bool filesync::ChangeCommitter::commit()
 		auto j = json::parse(c.resp_text);
 		if (!j["error"].is_null())
 		{
-			common::print_info(common::string_format("error posting files to server:%s", j["error"].get<std::string>()));
+			common::print_info(common::string_format("error posting files to server:%s", j["error"].get<std::string>().c_str()));
 		}
 	}
 

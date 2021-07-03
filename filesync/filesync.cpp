@@ -7,9 +7,14 @@
 #include <nlohmann/json.hpp>
 #include <assert.h>
 #include <regex>
+#include <cfg.h>
 #include <server.h>
 #include "boost/algorithm/string.hpp"
+#include "CLI11.hpp"
+#include <boost/program_options.hpp>
 using namespace nlohmann;
+namespace po = boost::program_options;
+std::string token_file_path;
 namespace filesync
 {
 	char *root_path;
@@ -65,10 +70,127 @@ namespace filesync
 		return common::strcpy(m[0].str().c_str());
 	}
 } // namespace filesync
+void begin_sync(std::string account)
+{
+	common::print_info("login account:" + account);
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+	token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", account.c_str())).string();
+	try
+	{
+		filesync->connect();
+		filesync->check_sync_path();
+		filesync->db.init(filesync->conf.db_path.c_str());
+		while (!filesync->get_all_server_files())
+			;
+		bool process_monitor = false;
+		while (1)
+		{
+			if (!filesync->clear_errs())
+			{
+				continue;
+			}
+			if (!filesync->get_file_changes())
+			{
+				continue;
+			}
+			if (!filesync->sync_server())
+			{
+				continue;
+			}
 
+			bool procoss_monitor_failed = false;
+			if (process_monitor)
+			{
+				while (auto local_change = filesync->get_local_file_change())
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+					local_change->path;
+					std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
+
+					if (!filesync->sync_local_added_or_modified(local_change->path.c_str()))
+					{
+						procoss_monitor_failed = true;
+					}
+					if (!filesync->sync_local_deleted(local_change->path.c_str()))
+					{
+						procoss_monitor_failed = true;
+					}
+					if (procoss_monitor_failed)
+					{
+						filesync->add_local_file_change(local_change);
+					}
+					else
+					{
+						delete (local_change);
+					}
+				}
+			}
+			else
+			{
+				if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
+				{
+					continue;
+				}
+				if (!filesync->sync_local_deleted(NULL))
+				{
+					continue;
+				}
+				process_monitor = true;
+				filesync::print_info("begin processing  monitor...");
+			}
+			if (!procoss_monitor_failed)
+				filesync->committer->commit();
+			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+		}
+	}
+	catch (const std::exception &ex)
+	{
+		common::print_info(ex.what());
+	}
+	delete (filesync);
+}
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
+	CLI::App app("filesync tool");
+	auto sync = app.add_subcommand("sync", "syncing everything");
+	auto listen = app.add_subcommand("listen", "listen as a server node");
+	std::string account;
+	sync->add_option("account", account, "your account name")->required();
+	sync->callback([&account]()
+				   {
+					   //common::print_info("begin syncing...");
+					   //return;
+					   begin_sync(account);
+				   });
+	listen->callback([]()
+					 { common::print_info("begin listening..."); });
+	CLI11_PARSE(app, argc, argv);
+	return 0;
+
+	po::options_description desc("Allowed options");
+	desc.add_options()("help", "produce help message")("sync", po::value<int>(), "set compression level");
+
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, desc), vm);
+	po::notify(vm);
+
+	if (vm.count("help"))
+	{
+		std::cout << desc << "\n";
+		return 1;
+	}
+
+	/*if (vm.count("compression"))
+	{
+		cout << "Compression level was set to "
+			 << vm["compression"].as<int>() << ".\n";
+	}
+	else
+	{
+		cout << "Compression level was not set.\n";
+	}*/
+
 	//std::cout << "LC_ALL: " << setlocale(LC_ALL, NULL) << std::endl;
 
 #ifdef __linux__
@@ -91,6 +213,7 @@ int main(int argc, char *argv[])
 		filesync::print_debug(argv[i]);
 	}*/
 	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+	token_file_path = (std::filesystem::path(filesync::datapath) / "token").string();
 	if (argc > 1)
 	{
 		if (std::string(argv[1]) == "listen")
@@ -170,37 +293,38 @@ int main(int argc, char *argv[])
 			export_directory_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path)).string();
 			common::makedir(export_directory_path);
 			std::vector<std::string> failed_paths;
-			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file) {
-				auto relative_path = common::get_relative_path(first_server_path, file.path);
-				auto exported_path = (std::filesystem::path{export_directory_path} / relative_path).string();
-				if (file.is_directory)
-				{
-					common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
-					common::makedir(exported_path);
-					return;
-				}
-				bool has_downloaded = false;
-				if (std::filesystem::exists(exported_path))
-				{
-					auto md5 = common::file_md5(exported_path.c_str());
-					if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
-					{
-						has_downloaded = true;
-					}
-				}
-				if (has_downloaded)
-				{
-					common::print_info(common::string_format("%s already exists", exported_path.c_str()));
-					return;
-				}
-				common::error err = filesync->download_file(file.path, file.commit_id, exported_path);
-				if (err)
-				{
-					filesync->destroy_tcp_client();
-					common::print_info(err.message());
-					failed_paths.push_back(exported_path);
-				}
-			});
+			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file)
+													{
+														auto relative_path = common::get_relative_path(first_server_path, file.path);
+														auto exported_path = (std::filesystem::path{export_directory_path} / relative_path).string();
+														if (file.is_directory)
+														{
+															common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
+															common::makedir(exported_path);
+															return;
+														}
+														bool has_downloaded = false;
+														if (std::filesystem::exists(exported_path))
+														{
+															auto md5 = common::file_md5(exported_path.c_str());
+															if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
+															{
+																has_downloaded = true;
+															}
+														}
+														if (has_downloaded)
+														{
+															common::print_info(common::string_format("%s already exists", exported_path.c_str()));
+															return;
+														}
+														common::error err = filesync->download_file(file.path, file.commit_id, exported_path);
+														if (err)
+														{
+															filesync->destroy_tcp_client();
+															common::print_info(err.message());
+															failed_paths.push_back(exported_path);
+														}
+													});
 			if (!error.empty())
 			{
 				common::print_info(error);
@@ -222,79 +346,7 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-	try
-	{
-		filesync->connect();
-		filesync->check_sync_path();
-		filesync->db.init(filesync->conf.db_path.c_str());
-		while (!filesync->get_all_server_files())
-			;
-		bool process_monitor = false;
-		while (1)
-		{
-			if (!filesync->clear_errs())
-			{
-				continue;
-			}
-			if (!filesync->get_file_changes())
-			{
-				continue;
-			}
-			if (!filesync->sync_server())
-			{
-				continue;
-			}
 
-			bool procoss_monitor_failed = false;
-			if (process_monitor)
-			{
-				while (auto local_change = filesync->get_local_file_change())
-				{
-					std::this_thread::sleep_for(std::chrono::milliseconds(100));
-					local_change->path;
-					std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
-
-					if (!filesync->sync_local_added_or_modified(local_change->path.c_str()))
-					{
-						procoss_monitor_failed = true;
-					}
-					if (!filesync->sync_local_deleted(local_change->path.c_str()))
-					{
-						procoss_monitor_failed = true;
-					}
-					if (procoss_monitor_failed)
-					{
-						filesync->add_local_file_change(local_change);
-					}
-					else
-					{
-						delete (local_change);
-					}
-				}
-			}
-			else
-			{
-				if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
-				{
-					continue;
-				}
-				if (!filesync->sync_local_deleted(NULL))
-				{
-					continue;
-				}
-				process_monitor = true;
-				filesync::print_info("begin processing  monitor...");
-			}
-			if (!procoss_monitor_failed)
-				filesync->committer->commit();
-			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-		}
-	}
-	catch (const std::exception &ex)
-	{
-		common::print_info(ex.what());
-	}
-	delete (filesync);
 	return 0;
 }
 std::string filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback)
@@ -443,6 +495,11 @@ bool filesync::FileSync::sync_server()
 		{
 			if (!compare_md5(DIRECTORY_MD5, local_md5))
 			{
+				if (std::filesystem::is_regular_file(full_path.get()))
+				{
+					common::print_info(common::string_format("there is already a file with path:%s", full_path.get()));
+					return false;
+				}
 				if (!std::filesystem::exists(full_path.get()))
 					assert(std::filesystem::create_directories(f.full_path));
 				this->db.update_local_md5(f.server_path.c_str(), DIRECTORY_MD5);
@@ -501,7 +558,10 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			common::find_files(path, files_cstr);
 			for (std::string v : files_cstr)
 			{
-				this->sync_local_added_or_modified(filesync::format_path(v.c_str()).c_str());
+				if (!this->sync_local_added_or_modified(filesync::format_path(v.c_str()).c_str()))
+				{
+					return false;
+				}
 			}
 			if (relative_path == "/")
 			{
@@ -563,6 +623,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					else
 					{
 						errs.push_back(common::string_format("failed to upload %s", path));
+						this->get_tcp_client()->xclient.session.close();
 					}
 				}
 			}
@@ -732,7 +793,8 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	common::print_info(common::string_format("uploading file %s...", full_path.c_str()));
 	std::promise<common::error> promise;
 	tcp_client->xclient.session.send_stream(
-		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+		{
 			if (error || completed)
 			{
 				promise.set_value(error);
@@ -875,7 +937,8 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	size_t written{0};
 	common::print_info(common::string_format("Downloading %s", save_path.c_str()));
 	tcp_client->xclient.session.receive_stream(
-		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+		os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+		{
 			written += read_size;
 			auto percentage = (double)(written) / reply.body_size * 100;
 			std::cout << common::string_format("\rreceived %d/%d bytes, %.2f%%", written, reply.body_size, percentage);
@@ -1364,22 +1427,17 @@ char *filesync::get_token()
 #ifdef __linux__
 
 #endif
-	system("filesync_old login --insecure");
-	FILE *f = fopen(TOKEN_FILE_PATH, "rb");
-	if (!f)
+	system(common::string_format("filesync-go login --insecure --token_path \"%s\"", token_file_path.c_str()).c_str());
+	std::ifstream in(token_file_path);
+	std::string ss{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+	std::regex regex("accesstoken: (.+)");
+	std::smatch m;
+	if (std::regex_search(ss, m, regex))
 	{
-		EXCEPTION("the token file does not exist");
+		auto token = common::strcpy(m[1].str().c_str());
+		return token;
 	}
-	int size = 1000;
-	char *buf = new char[((long)size)];
-	char *res = fgets(buf, size, f);
-	if (!res)
-	{
-		std::cout << "reading file failed" << std::endl;
-		return NULL;
-	}
-	fclose(f);
-	return buf;
+	return NULL;
 }
 filesync::File filesync::FileSync::local_file(std::string full_path, bool is_directory)
 {

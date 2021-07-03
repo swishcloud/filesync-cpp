@@ -9,9 +9,9 @@ using json = nlohmann::json;
 namespace filesync
 {
 #ifdef __linux__
-	const std::filesystem::path datapath = "/var/filesync/bigyasuo";
+	const std::filesystem::path datapath = "/var/FILESYNC";
 #else
-	const std::filesystem::path datapath = getenv("APPDATA");
+	const std::filesystem::path datapath = std::string(getenv("APPDATA")) + "/FILESYNC";
 #endif
 	class CONFIG
 	{
