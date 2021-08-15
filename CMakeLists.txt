@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_PREFIX_PATH "/opt/openssl")
 project(filesync_solution)
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+#set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 project ("filesync")
 
 # Include sub-projects.

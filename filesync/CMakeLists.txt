@@ -4,18 +4,19 @@
 cmake_minimum_required (VERSION 3.8)
 find_package(TCP REQUIRED)
 find_package(COMMON REQUIRED)
-find_package(openssl REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS date_time locale regex thread program_options)
 find_package(nlohmann_json 3.2.0 REQUIRED)
+add_compile_definitions("WIN32_LEAN_AND_MEAN")
 # Add source to this project's executable.
 add_executable (filesync "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp")
 if (MSVC)
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>" "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
     set(CMAKE_EXE_LINKER_FLAGS "")
 endif()
-target_link_libraries(filesync PRIVATE common::common ThirdPartyLibrary::TCP Boost::date_time Boost::locale Boost::regex Boost::thread Boost::program_options
-${OPENSLL_libssl}
-${OPENSLL_libcrypto}
+target_link_libraries(filesync PRIVATE COMMON::COMMON ThirdPartyLibrary::TCP Boost::date_time Boost::locale Boost::regex Boost::thread Boost::program_options
+OpenSSL::SSL
+OpenSSL::Crypto
 nlohmann_json::nlohmann_json
 sqlite)
 if (UNIX)
