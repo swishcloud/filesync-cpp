@@ -3,7 +3,7 @@
 #
 cmake_minimum_required (VERSION 3.8)
 find_package(TCP REQUIRED)
-find_package(common REQUIRED)
+find_package(COMMON REQUIRED)
 find_package(openssl REQUIRED)
 find_package(Boost REQUIRED COMPONENTS date_time locale regex thread program_options)
 find_package(nlohmann_json 3.2.0 REQUIRED)
@@ -21,7 +21,8 @@ sqlite)
 if (UNIX)
 target_link_libraries(filesync PRIVATE -pthread -ldl -lstdc++fs)
 endif()
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}\\include" ${COMMON_INCLUDE} "/opt/boost" ${OPENSSL_INCLUDE_DIR}/include)
+file(COPY "..\\.cache\\token" DESTINATION .)
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}\\include" "/opt/boost" ${OPENSSL_INCLUDE_DIR}/include)
 add_custom_target(ThidPartyBinaries
 COMMENT ("copying binaries")
 #COMMAND ${CMAKE_COMMAND} -E copy ${OPENSSL_BIN_DIR}"/libssl-3.dll" ${CMAKE_CURRENT_BINARY_DIR}
