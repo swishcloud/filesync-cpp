@@ -17,7 +17,7 @@ namespace po = boost::program_options;
 std::string token_file_path;
 namespace filesync
 {
-	char *root_path;
+	PATH root_path;
 	std::string get_parent_dir(const char *filename)
 	{
 		std::cmatch m{};
@@ -349,6 +349,21 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
+void filesync::FileSync::on_file_downloaded(PATH full_path, std::string md5)
+{
+	common::print_info(common::string_format("on_file_downloaded:%s", full_path.string().c_str()));
+}
+void filesync::FileSync::on_file_uploaded(PATH full_path, std::string md5)
+{
+	common::print_info(common::string_format("on_file_uploaded:%s", full_path.string().c_str()));
+	create_file_action *action = new create_file_action();
+	action->is_hidden = false;
+	auto relative_path = get_relative_path_by_fulllpath(full_path.string().c_str());
+	action->location = common::strcpy(get_parent_dir(relative_path.c_str()).c_str());
+	action->md5 = common::strcpy(md5.c_str());
+	action->name = file_name(relative_path.c_str());
+	this->committer->add_action(action);
+}
 std::string filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback)
 {
 	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
@@ -611,16 +626,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					auto file_size = std::filesystem::file_size(path);
 					auto r = this->upload_file(path, md5.c_str(), file_size);
 					std::cout << "UPLOAD " << (r ? "OK" : "Failed") << " :" << path << std::endl;
-					if (r)
-					{
-						create_file_action *action = new create_file_action();
-						action->is_hidden = false;
-						action->location = common::strcpy(get_parent_dir(relative_path.c_str()).c_str());
-						action->md5 = common::strcpy(md5.c_str());
-						action->name = file_name(relative_path.c_str());
-						this->committer->add_action(action);
-					}
-					else
+					if (!r)
 					{
 						errs.push_back(common::string_format("failed to upload %s", path));
 						this->get_tcp_client()->xclient.session.close();
@@ -727,6 +733,11 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 }
 bool filesync::FileSync::upload_file(std::string full_path, const char *md5, long size)
 {
+	XTCP::message reply;
+	std::promise<common::error> promise;
+	std::shared_ptr<std::istream> fs;
+	common::error err;
+	XTCP::message msg;
 	tcp_client *tcp_client = this->get_tcp_client();
 	std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
 	char *token = filesync::get_token();
@@ -762,10 +773,9 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	{
 		std::cout << "WARNING:"
 				  << "the file has already uploaded,skiping uploading." << std::endl;
+		this->on_file_uploaded(full_path, md5);
 		return true;
 	}
-
-	XTCP::message msg;
 	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
 	msg.addHeader({"path", path});
 	msg.addHeader({"md5", md5});
@@ -776,14 +786,13 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	msg.addHeader({TokenHeaderKey, token});
 	delete[](token);
 	msg.body_size = std::stoi(file_size) - std::stoi(uploaded_size);
-	common::error err;
 	XTCP::send_message(&tcp_client->xclient.session, msg, err);
 	if (err)
 	{
 		common::print_info(common::string_format("UPLOAD failed %s", err.message()));
 		return false;
 	}
-	std::shared_ptr<std::istream> fs{new std::ifstream(full_path, std::ios::binary)};
+	fs = std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)};
 	fs->seekg(std::stoi(uploaded_size), std::ios_base::beg);
 	if (!*fs)
 	{
@@ -791,7 +800,6 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		return false;
 	}
 	common::print_info(common::string_format("uploading file %s...", full_path.c_str()));
-	std::promise<common::error> promise;
 	tcp_client->xclient.session.send_stream(
 		std::shared_ptr<std::istream>{new std::ifstream(full_path, std::ios::binary)}, [&promise](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
 		{
@@ -808,7 +816,6 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		return false;
 	}
 	common::print_info(common::string_format("waiting for server replying..."));
-	XTCP::message reply;
 	XTCP::read_message(&tcp_client->xclient.session, reply, err);
 	if (err)
 	{
@@ -817,6 +824,7 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 	}
 	if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
 	{
+		this->on_file_uploaded(full_path, md5);
 		return true;
 	}
 	else
@@ -824,10 +832,6 @@ bool filesync::FileSync::upload_file(std::string full_path, const char *md5, lon
 		filesync::print_info(common::string_format("invalid msg type."));
 		return false;
 	}
-}
-bool filesync::FileSync::upload_file_v2(const char *ip, unsigned short port, std::ifstream &fs, const char *path, const char *md5, long file_size, long uploaded_size, const char *server_file_id)
-{
-	return false;
 }
 bool filesync::FileSync::clear_errs()
 {
@@ -866,12 +870,20 @@ void filesync::FileSync::destroy_tcp_client()
 	delete _tcp_client;
 	_tcp_client = NULL;
 };
-bool filesync::FileSync::monitor_path(std::string path)
+bool filesync::FileSync::monitor_path(PATH path)
 {
 	for (auto v : this->conf.monitor_paths)
 	{
-		if (strcmp(v.c_str(), common::strcpy(path.c_str(), v.size())) == 0 && (path.size() == v.size() || path[v.size()] == '\\' || path[v.size()] == '/'))
+		if (path.string().find(v.string(), 0) == 0)
 		{
+			if (path.size() > v.size())
+			{
+				auto c = path.string().c_str()[v.size()];
+				if ('\\' != c && '/' != c)
+				{
+					return false;
+				}
+			}
 			return true;
 		}
 	}
@@ -975,6 +987,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	{
 		return common::string_format("failed to rename the file with error:%s", e.what());
 	}
+	this->on_file_downloaded(save_path, md5.get<std::string>());
 	return NULL;
 }
 /*
@@ -1255,8 +1268,7 @@ start:
 		this->conf.sync_path = typed;
 		this->conf.save();
 	}
-	root_path = common::strcpy(conf.sync_path.c_str());
-	this->corret_path_sepatator(root_path);
+	root_path = conf.sync_path;
 	assert(this->monitor == NULL);
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
@@ -1353,33 +1365,18 @@ void filesync::FileSync::corret_path_sepatator(char *path)
 {
 	std::replace(path, path + strlen(path), '\\', '/');
 }
-void filesync::FileSync::to_relative_path(char *path)
+std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *c_path)
 {
-	int len = strlen(root_path), result_path_len = strlen(path) - len;
-	if (memcmp(path, root_path, len) == 0)
-	{
-		memcpy(path, path + len, result_path_len);
-		path[result_path_len] = '\0';
-		if (result_path_len == 0)
-		{
-			path[0] = '/';
-			path[1] = '\0';
-		}
-		return;
-	}
-	path[0] = '\0';
-}
-std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
-{
-	int len = strlen(root_path), result_path_len = strlen(path) - len;
+	PATH path = std::string(c_path);
+	size_t len = root_path.string().size(), result_path_len = path.string().size() - len;
 	if (result_path_len == 0)
 	{
 		return "/";
 	}
 	char *buf = new char[result_path_len + 1];
-	if (memcmp(path, root_path, len) == 0)
+	if (memcmp(path.string().c_str(), root_path.string().c_str(), len) == 0)
 	{
-		memcpy(buf, path + len, result_path_len);
+		memcpy(buf, path.string().c_str() + len, result_path_len);
 		buf[result_path_len] = '\0';
 		std::string path = buf;
 		delete[] buf;
@@ -1393,10 +1390,10 @@ std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *path)
 }
 char *filesync::FileSync::get_full_path(const char *path)
 {
-	int size = strlen(root_path) + strlen(path);
+	int size = root_path.string().size() + strlen(path);
 	char *full_path = new char[size + 1];
-	memcpy(full_path, root_path, strlen(root_path));
-	memcpy(full_path + strlen(root_path), path, strlen(path));
+	memcpy(full_path, root_path.string().c_str(), root_path.string().size());
+	memcpy(full_path + root_path.string().size(), path, strlen(path));
 	full_path[size] = '\0';
 	return full_path;
 }

@@ -73,10 +73,11 @@ private:
 	std::string get_relative_path_by_fulllpath(const char *path);
 	std::filesystem::path relative_to_server_path(const char *relative_path);
 	bool upload_file(std::string full_path, const char *md5, long size);
-	bool upload_file_v2(const char *ip, unsigned short port, std::ifstream &fs, const char *path, const char *md5, long file_size, long uploaded_size, const char *server_file_id);
 	std::mutex _local_file_changes_mutex;
 	std::queue<common::monitor::change *> _local_file_changes;
 	std::vector<std::string> errs;
+	void on_file_downloaded(PATH full_path, std::string md5);
+	void on_file_uploaded(PATH full_path, std::string md5);
 
 public:
 	static void monitor_cb(common::monitor::change *c, void *obj);
@@ -110,7 +111,7 @@ public:
 	bool clear_errs();
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
-	bool monitor_path(std::string path);
+	bool monitor_path(PATH path);
 };
 struct filesync::File
 {

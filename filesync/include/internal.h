@@ -12,6 +12,17 @@
 using namespace nlohmann;
 namespace filesync
 {
+    struct PATH
+    {
+    private:
+        std::string str;
+
+    public:
+        std::string string();
+        size_t size();
+        PATH(){};
+        PATH(std::string str);
+    };
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";
     char *get_token();
     std::string get_parent_dir(const char *filename);

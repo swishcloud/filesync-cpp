@@ -94,7 +94,7 @@ void filesync::PartitionConf::init(bool debug_mode)
 		std::regex reg{"/[^:]+"};
 		while (std::regex_search(monitor_paths, m, reg))
 		{
-			this->monitor_paths.push_back(m[0]);
+			this->monitor_paths.push_back(m[0].str());
 			monitor_paths = m.suffix();
 		}
 	}
@@ -108,7 +108,7 @@ void filesync::PartitionConf::save()
 	std::string monitor_paths;
 	for (auto v : this->monitor_paths)
 	{
-		monitor_paths += v + ":";
+		monitor_paths += v.string() + ":";
 	}
 	monitor_paths = monitor_paths.substr(0, monitor_paths.size() - 1);
 	j["monitor_paths"] = monitor_paths;
