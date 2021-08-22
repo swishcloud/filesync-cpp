@@ -162,6 +162,87 @@ void begin_listen(std::string listen_port, std::string files_path)
 
 	filesync::print_info("exited.");
 }
+void begin_export(filesync::PATH path, std::string commit_id, std::string max_commit_id, filesync::PATH destination_folder)
+{
+	common::print_info(common::string_format("exporting server directory %s with content since %s until %s to local directory %s", path.string().c_str(), std::string(commit_id) == "/" ? "first commit" : commit_id.c_str(), max_commit_id.c_str(), destination_folder.string().c_str()));
+	commit_id = std::string(commit_id) == "/" ? "" : commit_id;
+	if (!std::filesystem::exists(destination_folder.string()))
+	{
+		std::error_code ec;
+		std::filesystem::create_directory(destination_folder.string(), ec);
+		if (ec)
+		{
+			common::print_info(ec.message());
+			return;
+		}
+	}
+	else
+	{
+		if (!std::filesystem::is_directory(destination_folder.string()))
+		{
+			common::print_debug(common::string_format("the path %s already exists, but it's not a directory", destination_folder.string().c_str()));
+			return;
+		}
+	}
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+	filesync->connect();
+	std::string first_server_path = path.string();
+	std::string export_directory_path = destination_folder.string();
+	export_directory_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path)).string();
+	common::makedir(export_directory_path);
+	std::vector<std::string> failed_paths;
+	auto error = filesync->get_server_files(path.string(), commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file)
+											{
+												auto relative_path = common::get_relative_path(first_server_path, file.path);
+												auto exported_path = (std::filesystem::path{export_directory_path} / relative_path).string();
+												if (file.is_directory)
+												{
+													common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
+													common::makedir(exported_path);
+													return;
+												}
+												bool has_downloaded = false;
+												if (std::filesystem::exists(exported_path))
+												{
+													auto md5 = common::file_md5(exported_path.c_str());
+													if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
+													{
+														has_downloaded = true;
+													}
+												}
+												if (has_downloaded)
+												{
+													common::print_info(common::string_format("%s already exists", exported_path.c_str()));
+													return;
+												}
+												common::error err = filesync->download_file(file.path, file.commit_id, exported_path);
+												if (err)
+												{
+													filesync->destroy_tcp_client();
+													common::print_info(err.message());
+													failed_paths.push_back(exported_path);
+												}
+											});
+	if (!error.empty())
+	{
+		common::print_info(error);
+		exit(1);
+	}
+	if (failed_paths.size() == 0)
+	{
+		common::print_info("Already exported all files.");
+		return;
+	}
+	else
+	{
+		common::print_info("the following paths are not exported successfully:");
+		for (auto i : failed_paths)
+		{
+			std::cout << "FAIL:" << i << std::endl;
+		}
+		return;
+	}
+}
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
@@ -228,25 +309,7 @@ int main(int argc, char *argv[])
 	token_file_path = (std::filesystem::path(filesync::datapath) / "token").string();
 	if (argc > 1)
 	{
-		if (std::string(argv[1]) == "listen")
-		{
-		}
-		else if (std::string(argv[1]) == "sync")
-		{
-			if (argc < 3)
-			{
-				filesync::print_info("missing the sync path.");
-				return 1;
-			}
-			filesync::print_info(common::string_format("syncing all files within folder %s", argv[2]));
-			filesync::tcp_client tcp_client{"192.168.1.1", "8008"};
-			tcp_client.connect();
-			while (getchar())
-			{
-				/* code */
-			}
-		}
-		else if (std::string(argv[1]) == "freespace")
+		if (std::string(argv[1]) == "freespace")
 		{
 			filesync->connect();
 			filesync->check_sync_path();
@@ -254,94 +317,6 @@ int main(int argc, char *argv[])
 			filesync->clear_synced_files(filesync->conf.sync_path.string().c_str());
 			filesync::print_info(common::string_format("Freed some space from %s,exit...", filesync->conf.sync_path.string().c_str()));
 			exit(0);
-		}
-		else if (std::string(argv[1]) == "export")
-		{
-			auto path = argv[2];
-			const char *commit_id = argv[3];
-			auto max_commit_id = argv[4];
-			auto destination_folder = argv[5];
-			if (destination_folder[strlen(destination_folder) - 1] == '/' || destination_folder[strlen(destination_folder) - 1] == '\\')
-			{
-				destination_folder[strlen(destination_folder) - 1] = '\0';
-			}
-			common::print_info(common::string_format("exporting server directory %s with content since %s until %s to local directory %s", path, std::string(commit_id) == "/" ? "first commit" : commit_id, max_commit_id, destination_folder));
-			commit_id = std::string(commit_id) == "/" ? "" : commit_id;
-			if (!std::filesystem::exists(destination_folder))
-			{
-				std::error_code ec;
-				std::filesystem::create_directory(destination_folder, ec);
-				if (ec)
-				{
-					common::print_info(ec.message());
-					return 1;
-				}
-			}
-			else
-			{
-				if (!std::filesystem::is_directory(destination_folder))
-				{
-					common::print_debug(common::string_format("the path %s already exists, but it's not directory", destination_folder));
-					return 1;
-				}
-			}
-			filesync->connect();
-			std::string first_server_path = path;
-			std::string export_directory_path = destination_folder;
-			export_directory_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path)).string();
-			common::makedir(export_directory_path);
-			std::vector<std::string> failed_paths;
-			auto error = filesync->get_server_files(path, commit_id, max_commit_id, [&failed_paths, first_server_path, export_directory_path, filesync](filesync::ServerFile &file)
-													{
-														auto relative_path = common::get_relative_path(first_server_path, file.path);
-														auto exported_path = (std::filesystem::path{export_directory_path} / relative_path).string();
-														if (file.is_directory)
-														{
-															common::print_info(common::string_format("creating directory:%s", exported_path.c_str()));
-															common::makedir(exported_path);
-															return;
-														}
-														bool has_downloaded = false;
-														if (std::filesystem::exists(exported_path))
-														{
-															auto md5 = common::file_md5(exported_path.c_str());
-															if (filesync::compare_md5(md5.c_str(), file.md5.c_str()))
-															{
-																has_downloaded = true;
-															}
-														}
-														if (has_downloaded)
-														{
-															common::print_info(common::string_format("%s already exists", exported_path.c_str()));
-															return;
-														}
-														common::error err = filesync->download_file(file.path, file.commit_id, exported_path);
-														if (err)
-														{
-															filesync->destroy_tcp_client();
-															common::print_info(err.message());
-															failed_paths.push_back(exported_path);
-														}
-													});
-			if (!error.empty())
-			{
-				common::print_info(error);
-				exit(1);
-			}
-			if (failed_paths.size() == 0)
-			{
-				common::print_info("Already exported all files.");
-				return 0;
-			}
-			else
-			{
-				common::print_info("the following paths are not exported successfully:");
-				for (auto i : failed_paths)
-				{
-					std::cout << "FAIL:" << i << std::endl;
-				}
-				return 1;
-			}
 		}
 	}
 
@@ -362,9 +337,9 @@ void filesync::FileSync::on_file_uploaded(PATH full_path, std::string md5)
 	action->name = file_name(relative_path.c_str());
 	this->committer->add_action(action);
 }
-std::string filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback)
+std::string filesync::FileSync::get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback)
 {
-	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id.c_str(), max_commit_id.c_str());
 	std::unique_ptr<char[]> token{get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
 	while (1)
@@ -384,7 +359,7 @@ std::string filesync::FileSync::get_server_files(const char *path, const char *c
 	auto data = j["data"];
 	for (auto item : data)
 	{
-		std::string file_server_path = common::string_format("%s%s%s", path, strcmp(path, "/") == 0 ? "" : "/", item["name"].get<std::string>().c_str());
+		std::string file_server_path = common::string_format("%s%s%s", path, path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
 		ServerFile f;
 		f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
 		if (!item["md5"].is_null())
@@ -1110,11 +1085,11 @@ bool filesync::FileSync::download_file(File &file)
 	return is_downloaded;
 }
 */
-std::vector<filesync::File> filesync::FileSync::get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok)
+std::vector<filesync::File> filesync::FileSync::get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok)
 {
 	std::vector<filesync::File> files;
 	std::cout << path << std::endl;
-	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id, max_commit_id);
+	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id.c_str(), max_commit_id.c_str());
 
 	std::unique_ptr<char[]> token{get_token()};
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), token.get()};
@@ -1137,7 +1112,7 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(const char *pat
 	auto data = j["data"];
 	for (auto item : data)
 	{
-		std::string file_server_path = common::string_format("%s%s%s", path, strcmp(path, "/") == 0 ? "" : "/", item["name"].get<std::string>().c_str());
+		std::string file_server_path = common::string_format("%s%s%s", path.c_str(), path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
 		filesync::File f;
 		f = this->server_file(file_server_path, item["commit_id"], strcmp(item["type"].get<std::string>().c_str(), "2") == 0);
 		if (f.is_directory)
@@ -1423,7 +1398,7 @@ char *filesync::FileSync::get_relative_path(const char *server_path)
 		return result;
 	}
 }
-std::filesystem::path filesync::FileSync::relative_to_server_path(const char *relative_path)
+std::filesystem::path filesync::FileSync::relative_to_server_path(std::string relative_path)
 {
 	return std::filesystem::path(this->server_location) / relative_path;
 }

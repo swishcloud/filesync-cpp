@@ -71,7 +71,7 @@ private:
 	char *get_full_path(const char *path);
 	char *get_relative_path(const char *server_path);
 	std::string get_relative_path_by_fulllpath(const char *path);
-	std::filesystem::path relative_to_server_path(const char *relative_path);
+	std::filesystem::path relative_to_server_path(std::string relative_path);
 	bool upload_file(std::string full_path, const char *md5, long size);
 	std::mutex _local_file_changes_mutex;
 	std::queue<common::monitor::change *> _local_file_changes;
@@ -91,8 +91,8 @@ public:
 	~FileSync();
 	void connect();
 	common::error download_file(std::string server_path, std::string commit_id, std::string save_path);
-	std::vector<File> get_server_files(const char *path, const char *commit_id, const char *max_commit_id, bool *ok);
-	std::string get_server_files(const char *path, const char *commit_id, const char *max_commit_id, std::function<void(ServerFile &file)> callback);
+	std::vector<File> get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok);
+	std::string get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback);
 	bool get_all_server_files();
 	std::vector<filesync::File> files;
 	std::unordered_map<const char *, int, hasher, keyeq> files_map;

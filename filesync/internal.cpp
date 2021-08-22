@@ -36,10 +36,10 @@ namespace filesync
         this->str = str;
         common::formalize_path(this->str);
         auto c = this->str[this->str.size() - 1];
-        if ('\\' == c || '/' == c)
+        if (('\\' == c || '/' == c) && str.size() > 1)
         {
             if (!trimEnd)
-                throw "PATH can not end with \\ or /.";
+                throw "PATH except '/' can not end with \\ or /.";
             this->str = this->str.substr(0, str.size() - 1);
         }
         std::regex regex{"\\\\"};
