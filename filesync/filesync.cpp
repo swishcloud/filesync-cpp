@@ -127,7 +127,7 @@ void begin_sync(std::string account)
 			}
 			else
 			{
-				if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.c_str()))
+				if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.string().c_str()))
 				{
 					continue;
 				}
@@ -149,6 +149,19 @@ void begin_sync(std::string account)
 	}
 	delete (filesync);
 }
+void begin_listen(std::string listen_port, std::string files_path)
+{
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+	common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
+#ifdef __linux__
+	filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
+#else
+	filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
+#endif
+	s.listen();
+
+	filesync::print_info("exited.");
+}
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
@@ -158,13 +171,12 @@ int main(int argc, char *argv[])
 	std::string account;
 	sync->add_option("--account", account, "your account name")->required();
 	sync->callback([&account]()
-				   {
-					   //common::print_info("begin syncing...");
-					   //return;
-					   begin_sync(account);
-				   });
-	listen->callback([]()
-					 { common::print_info("begin listening..."); });
+				   { begin_sync(account); });
+	std::string listen_port, files_path;
+	listen->add_option("--listen_port", listen_port, "the tcp listen port")->required();
+	listen->add_option("--files_path", files_path, "the path of files repo")->required();
+	listen->callback([&listen_port, &files_path]()
+					 { begin_listen(listen_port, files_path); });
 	CLI11_PARSE(app, argc, argv);
 	return 0;
 
@@ -218,20 +230,6 @@ int main(int argc, char *argv[])
 	{
 		if (std::string(argv[1]) == "listen")
 		{
-			if (argc < 4)
-			{
-				filesync::print_info(common::string_format("missing a paramter for server listening port, or a paramter for server files location"));
-				return 1;
-			}
-			common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
-#ifdef __linux__
-			filesync::server server{(short)std::stoi(argv[2]), argv[3], http_client};
-#else
-			filesync::server server{(short)std::stoi(argv[2]), argv[3], http_client};
-#endif
-			server.listen();
-
-			filesync::print_info("exited.");
 		}
 		else if (std::string(argv[1]) == "sync")
 		{
@@ -253,8 +251,8 @@ int main(int argc, char *argv[])
 			filesync->connect();
 			filesync->check_sync_path();
 			filesync->db.init(filesync->conf.db_path.c_str());
-			filesync->clear_synced_files(filesync->conf.sync_path.c_str());
-			filesync::print_info(common::string_format("Freed some space from %s,exit...", filesync->conf.sync_path.c_str()));
+			filesync->clear_synced_files(filesync->conf.sync_path.string().c_str());
+			filesync::print_info(common::string_format("Freed some space from %s,exit...", filesync->conf.sync_path.string().c_str()));
 			exit(0);
 		}
 		else if (std::string(argv[1]) == "export")
@@ -481,6 +479,10 @@ bool filesync::FileSync::sync_server()
 
 		//struct File object
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
+		if (f.server_path == "/")
+		{
+			continue;
+		}
 		if (!this->monitor_path(f.server_path))
 		{
 			common::print_debug(common::string_format("clearing Non-monitored path in db:%s", f.server_path.c_str()));
@@ -670,6 +672,10 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		bool is_directory = md5 == NULL;
 		auto full_path = get_full_path(file_name);
 		auto relative_path = this->get_relative_path_by_fulllpath(full_path);
+		if (relative_path == "/")
+		{
+			continue;
+		}
 		if (!this->monitor_path(relative_path))
 		{
 			common::print_debug(common::string_format("Skip Non-monitored path:%s", relative_path.c_str()));
@@ -1241,7 +1247,7 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 void filesync::FileSync::check_sync_path()
 {
 start:
-	if (this->conf.sync_path.empty())
+	if (this->conf.sync_path.string().empty())
 	{
 		std::cout << "please enter the path of sync location:";
 		std::string typed;
@@ -1265,7 +1271,7 @@ start:
 				EXCEPTION(err.message());
 			}
 		}
-		this->conf.sync_path = typed;
+		this->conf.sync_path = PATH(typed, true);
 		this->conf.save();
 	}
 	root_path = conf.sync_path;
@@ -1275,7 +1281,7 @@ start:
 #else
 	this->monitor = new common::monitor::win_monitor(this->conf.sync_path);
 #endif
-	monitor->watch(this->conf.sync_path);
+	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
 }
 bool filesync::FileSync::get_file_changes()
@@ -1390,6 +1396,8 @@ std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *c_pat
 }
 char *filesync::FileSync::get_full_path(const char *path)
 {
+	if (std::string(path) == "/")
+		return common::strcpy(root_path.string().c_str());
 	int size = root_path.string().size() + strlen(path);
 	char *full_path = new char[size + 1];
 	memcpy(full_path, root_path.string().c_str(), root_path.string().size());

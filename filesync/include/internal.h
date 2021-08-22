@@ -21,7 +21,7 @@ namespace filesync
         std::string string();
         size_t size();
         PATH(){};
-        PATH(std::string str);
+        PATH(std::string str, bool trimEnd = false);
     };
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";
     char *get_token();

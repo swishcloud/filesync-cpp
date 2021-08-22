@@ -31,14 +31,16 @@ namespace filesync
         e.err = "PLATFORM_NOT_SUPPORTED";
         throw e;
     }
-    PATH::PATH(std::string str)
+    PATH::PATH(std::string str, bool trimEnd)
     {
         this->str = str;
         common::formalize_path(this->str);
-        auto c = this->str[this->str.size() - 0];
+        auto c = this->str[this->str.size() - 1];
         if ('\\' == c || '/' == c)
         {
-            throw "PATH can not end with \\ or /.";
+            if (!trimEnd)
+                throw "PATH can not end with \\ or /.";
+            this->str = this->str.substr(0, str.size() - 1);
         }
         std::regex regex{"\\\\"};
         this->str = std::regex_replace(this->str, regex, "/");

@@ -7,33 +7,36 @@ namespace filesync
     void server::receive(XTCP::tcp_session *session)
     {
         common::print_debug("reading client message...");
-        XTCP::read_message(session, [this, session](common::error error, XTCP::message &msg) {
-            if (!error)
-            {
-                common::print_debug("Received a client message,processing...");
-                this->process_message(session, msg, [this, session](common::error error) {
-                    if (!error)
-                    {
-                        common::print_debug(common::string_format("processed a client message successfully."));
-                        receive(session);
-                    }
-                    else
-                    {
-                        common::print_debug(common::string_format("Error processing message:%s,closing this session...", error.message()));
-                        session->close();
-                    }
-                });
-            }
-            else
-            {
-                common::print_debug(common::string_format("Error reading message:%s,closing this session...", error.message()));
-                session->close();
-            }
-        });
+        XTCP::read_message(session, [this, session](common::error error, XTCP::message &msg)
+                           {
+                               if (!error)
+                               {
+                                   common::print_debug("Received a client message,processing...");
+                                   this->process_message(session, msg, [this, session](common::error error)
+                                                         {
+                                                             if (!error)
+                                                             {
+                                                                 common::print_debug(common::string_format("processed a client message successfully."));
+                                                                 receive(session);
+                                                             }
+                                                             else
+                                                             {
+                                                                 common::print_debug(common::string_format("Error processing message:%s,closing this session...", error.message()));
+                                                                 session->close();
+                                                             }
+                                                         });
+                               }
+                               else
+                               {
+                                   common::print_debug(common::string_format("Error reading message:%s,closing this session...", error.message()));
+                                   session->close();
+                               }
+                           });
     }
     server::server(short port, std::string file_location, common::http_client &http_client) : tcp_server{port}, ip{"0.0.0.0"}, port{port}, file_location{file_location}, http_client{http_client}
     {
-        tcp_server.on_accepted = [this](XTCP::tcp_session *session, XTCP::tcp_server *server) {
+        tcp_server.on_accepted = [this](XTCP::tcp_session *session, XTCP::tcp_server *server)
+        {
             session->timeout = 60 * 5;
             filesync::print_info("accepted a client connection.");
             receive(session);
@@ -58,26 +61,28 @@ namespace filesync
                 auto msg = XTCP::message{};
                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
                 msg.body_size = common::file_size(file_path);
-                XTCP::send_message(session, msg, [file_path, this, cb, session](common::error error) {
-                    if (error)
-                    {
-                        cb("Faile to send a reply mssage.");
-                        return;
-                    }
-                    std::shared_ptr<std::istream> fs{new std::ifstream{file_path, std::ios_base::binary}};
-                    session->send_stream(
-                        fs, [this, cb](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
-                            if (completed)
-                            {
-                                cb(NULL);
-                            }
-                            else if (error)
-                            {
-                                cb(common::string_format("Faile to send a stream:%s", error.message()));
-                            }
-                        },
-                        NULL);
-                });
+                XTCP::send_message(session, msg, [file_path, this, cb, session](common::error error)
+                                   {
+                                       if (error)
+                                       {
+                                           cb("Faile to send a reply mssage.");
+                                           return;
+                                       }
+                                       std::shared_ptr<std::istream> fs{new std::ifstream{file_path, std::ios_base::binary}};
+                                       session->send_stream(
+                                           fs, [this, cb](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+                                           {
+                                               if (completed)
+                                               {
+                                                   cb(NULL);
+                                               }
+                                               else if (error)
+                                               {
+                                                   cb(common::string_format("Faile to send a stream:%s", error.message()));
+                                               }
+                                           },
+                                           NULL);
+                                   });
             }
         }
         catch (const std::exception &e)
@@ -172,7 +177,8 @@ namespace filesync
         filesync::print_debug("reading bytes into just created block file");
         //receive file
         s->read(
-            msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p) {
+            msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+            {
                 try
                 {
                     std::string file_path = msg.getHeaderValue<std::string>("path");
@@ -222,7 +228,7 @@ namespace filesync
                             json resp = json::parse(this->http_client.resp_text);
                             if (!resp["error"].empty())
                             {
-                                throw common::exception(common::string_format("Api error:", resp["error"].get<std::string>()));
+                                throw common::exception(common::string_format("Api error:%s", resp["error"].get<std::string>().c_str()));
                             }
 
                             auto tmp_path = (std::filesystem::temp_directory_path() / file_path).string();
@@ -273,17 +279,18 @@ namespace filesync
                                 //reply
                                 auto msg = XTCP::message{};
                                 msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Reply);
-                                XTCP::send_message(s, msg, [this, s, cb](common::error error) {
-                                    if (!error)
-                                    {
-                                        common::print_debug(common::string_format("client uploaded a file successfully"));
-                                        cb(NULL);
-                                    }
-                                    else
-                                    {
-                                        cb(common::string_format("failed to send reply message after change server file status to completed:%s", error.message()));
-                                    }
-                                });
+                                XTCP::send_message(s, msg, [this, s, cb](common::error error)
+                                                   {
+                                                       if (!error)
+                                                       {
+                                                           common::print_debug(common::string_format("client uploaded a file successfully"));
+                                                           cb(NULL);
+                                                       }
+                                                       else
+                                                       {
+                                                           cb(common::string_format("failed to send reply message after change server file status to completed:%s", error.message()));
+                                                       }
+                                                   });
                             }
                             else
                             {
@@ -332,9 +339,12 @@ namespace filesync
         filesync::print_info(common::string_format("tcp connecting %s:%s", this->server_host.c_str(), this->server_port.c_str()));
         std::promise<bool> promise;
         std::future<bool> future = promise.get_future();
-        xclient.on_connect_success = [&promise](XTCP::tcp_client *client) { promise.set_value(true); };
-        xclient.on_connect_fail = [&promise](XTCP::tcp_client *client) { promise.set_value(false); };
-        xclient.session.on_closed = [this](XTCP::tcp_session *session) {
+        xclient.on_connect_success = [&promise](XTCP::tcp_client *client)
+        { promise.set_value(true); };
+        xclient.on_connect_fail = [&promise](XTCP::tcp_client *client)
+        { promise.set_value(false); };
+        xclient.session.on_closed = [this](XTCP::tcp_session *session)
+        {
             this->closed = true;
         };
         xclient.start(this->server_host.c_str(), this->server_port.c_str());

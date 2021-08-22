@@ -88,7 +88,7 @@ void filesync::PartitionConf::init(bool debug_mode)
 	{
 		json j = json::parse(in);
 		this->commit_id = j["commit_id"].get<std::string>();
-		this->sync_path = j["sync_path"].get<std::string>();
+		this->sync_path = PATH(j["sync_path"].get<std::string>(), true);
 		auto monitor_paths = !j["monitor_paths"].is_null() ? j["monitor_paths"].get<std::string>() : "";
 		std::smatch m;
 		std::regex reg{"/[^:]+"};
@@ -104,7 +104,7 @@ void filesync::PartitionConf::save()
 {
 	json j;
 	j["commit_id"] = this->commit_id;
-	j["sync_path"] = this->sync_path;
+	j["sync_path"] = this->sync_path.string();
 	std::string monitor_paths;
 	for (auto v : this->monitor_paths)
 	{

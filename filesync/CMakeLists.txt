@@ -9,6 +9,7 @@ find_package(Boost REQUIRED COMPONENTS date_time locale regex thread program_opt
 find_package(nlohmann_json 3.2.0 REQUIRED)
 add_compile_definitions("WIN32_LEAN_AND_MEAN")
 # Add source to this project's executable.
+add_library(common::common ALIAS COMMON::COMMON)
 add_executable (filesync "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp")
 if (MSVC)
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>" "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
@@ -22,7 +23,6 @@ sqlite)
 if (UNIX)
 target_link_libraries(filesync PRIVATE -pthread -ldl -lstdc++fs)
 endif()
-file(COPY "..\\.cache\\token" DESTINATION .)
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}\\include" "/opt/boost" ${OPENSSL_INCLUDE_DIR}/include)
 add_custom_target(ThidPartyBinaries
 COMMENT ("copying binaries")

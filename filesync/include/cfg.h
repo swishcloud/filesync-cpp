@@ -37,7 +37,7 @@ namespace filesync
 		std::string commit_id;
 		std::string db_path;
 		std::string partition_cfg_path;
-		std::string sync_path;
+		PATH sync_path;
 		std::vector<PATH> monitor_paths;
 		void init(bool debug_mode);
 		void save();
