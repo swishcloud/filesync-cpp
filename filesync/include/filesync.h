@@ -37,6 +37,15 @@ namespace filesync
 	class tcp_client;
 	struct File;
 	class ServerFile;
+	// CMD STRUCTURE
+	struct CMD_EXPORT_OPTION
+	{
+		std::string account;
+		filesync::PATH path;
+		std::string commit_id;
+		std::string max_commit_id;
+		filesync::PATH destination_folder;
+	};
 } // namespace filesync
 class filesync::FileSync
 {

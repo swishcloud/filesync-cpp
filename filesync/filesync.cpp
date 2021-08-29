@@ -243,21 +243,39 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
 		return;
 	}
 }
+void CMD_REPORT(CLI::App *parent)
+{
+	auto opt = std::shared_ptr<filesync::CMD_EXPORT_OPTION>{new filesync::CMD_EXPORT_OPTION};
+	auto export_cmd = parent->add_subcommand("export", "export files");
+	export_cmd->add_option("--account", opt->account, "your account name")->required();
+	export_cmd->add_option("--path", opt->path, "the path to export")->required();
+	export_cmd->add_option("--commit_id", opt->commit_id, "the commit id of a path")->required();
+	export_cmd->add_option("--max_commit_id", opt->max_commit_id, "the max commit id of subfiles to query")->required();
+	export_cmd->add_option("--dest", opt->destination_folder, "the destination folder where save exported files")->required();
+	export_cmd->callback([opt]()
+						 {
+							 token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", opt->account.c_str())).string();
+							 begin_export(opt->path, opt->commit_id, opt->max_commit_id, opt->destination_folder);
+						 });
+}
 int main(int argc, char *argv[])
 {
 	setlocale(LC_ALL, "zh_CN.UTF-8");
 	CLI::App app("filesync tool");
 	auto sync = app.add_subcommand("sync", "syncing everything");
-	auto listen = app.add_subcommand("listen", "listen as a server node");
 	std::string account;
 	sync->add_option("--account", account, "your account name")->required();
 	sync->callback([&account]()
 				   { begin_sync(account); });
 	std::string listen_port, files_path;
+
+	auto listen = app.add_subcommand("listen", "listen as a server node");
 	listen->add_option("--listen_port", listen_port, "the tcp listen port")->required();
 	listen->add_option("--files_path", files_path, "the path of files repo")->required();
 	listen->callback([&listen_port, &files_path]()
 					 { begin_listen(listen_port, files_path); });
+
+	CMD_REPORT(&app);
 	CLI11_PARSE(app, argc, argv);
 	return 0;
 
@@ -359,7 +377,7 @@ std::string filesync::FileSync::get_server_files(std::string path, std::string c
 	auto data = j["data"];
 	for (auto item : data)
 	{
-		std::string file_server_path = common::string_format("%s%s%s", path, path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
+		std::string file_server_path = common::string_format("%s%s%s", path.c_str(), path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
 		ServerFile f;
 		f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
 		if (!item["md5"].is_null())
