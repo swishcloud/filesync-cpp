@@ -70,9 +70,14 @@ namespace filesync
 		return common::strcpy(m[0].str().c_str());
 	}
 } // namespace filesync
-void begin_sync(std::string account)
+void begin_sync(std::string account, bool get_all_server_files)
 {
 	common::print_info("login account:" + account);
+	if (get_all_server_files)
+	{
+		common::print_info("will begin getting all server files in 3 seconds.Be patient...");
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 3));
+	}
 	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
 	token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", account.c_str())).string();
 	try
@@ -80,7 +85,7 @@ void begin_sync(std::string account)
 		filesync->connect();
 		filesync->check_sync_path();
 		filesync->db.init(filesync->conf.db_path.c_str());
-		while (!filesync->get_all_server_files())
+		while (!filesync->get_all_server_files(get_all_server_files))
 			;
 		bool process_monitor = false;
 		while (1)
@@ -264,9 +269,11 @@ int main(int argc, char *argv[])
 	CLI::App app("filesync tool");
 	auto sync = app.add_subcommand("sync", "syncing everything");
 	std::string account;
+	bool fa;
 	sync->add_option("--account", account, "your account name")->required();
-	sync->callback([&account]()
-				   { begin_sync(account); });
+	sync->add_option("--fa", fa, "force looking up all server files.this option is recommended for some unusual circumstance.");
+	sync->callback([&account, &fa]()
+				   { begin_sync(account, fa); });
 	std::string listen_port, files_path;
 
 	auto listen = app.add_subcommand("listen", "listen as a server node");
@@ -1152,10 +1159,10 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(std::string pat
 	*ok = true;
 	return files;
 }
-bool filesync::FileSync::get_all_server_files()
+bool filesync::FileSync::get_all_server_files(bool force_getting_all)
 {
 	this->need_sync_server = true;
-	if (this->conf.commit_id.empty())
+	if (this->conf.commit_id.empty() || force_getting_all)
 	{
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
 		bool ok = false;

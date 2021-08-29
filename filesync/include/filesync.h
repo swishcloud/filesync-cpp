@@ -102,7 +102,7 @@ public:
 	common::error download_file(std::string server_path, std::string commit_id, std::string save_path);
 	std::vector<File> get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok);
 	std::string get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback);
-	bool get_all_server_files();
+	bool get_all_server_files(bool force_getting_all);
 	std::vector<filesync::File> files;
 	std::unordered_map<const char *, int, hasher, keyeq> files_map;
 	void check_sync_path();
