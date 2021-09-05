@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
 	CLI::App app("filesync tool");
 	auto sync = app.add_subcommand("sync", "syncing everything");
 	std::string account;
-	bool fa;
+	bool fa = false;
 	sync->add_option("--account", account, "your account name")->required();
 	sync->add_option("--fa", fa, "force looking up all server files.this option is recommended for some unusual circumstance.");
 	sync->callback([&account, &fa]()
