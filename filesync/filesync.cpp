@@ -475,7 +475,7 @@ bool filesync::FileSync::sync_server()
 		const char *commit_id = files->get_value("commit_id", i);
 		bool is_deleted = is_deleted_str[0] == '1';
 		std::unique_ptr<char[]> full_path{get_full_path(file_name)};
-		std::cout << "sync_server>" << full_path.get() << std::endl;
+		//std::cout << "sync_server>" << full_path.get() << std::endl;
 
 		//struct File object
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
@@ -538,7 +538,6 @@ bool filesync::FileSync::sync_server()
 				}
 				if (has_downloaded)
 				{
-					common::print_info(common::string_format("%s already exists", f.full_path.c_str()));
 					this->db.update_local_md5(f.server_path.c_str(), md5);
 				}
 				else
@@ -1182,11 +1181,10 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	std::string id = change["Id"].get<std::string>();
 	int change_type = change["ChangeType"].get<int>();
 	std::string path = change["Path"].get<std::string>();
-	/*//Skip if the change path is not under the syncing server location
-	if (strcmp(this-/home/bigyasuo/Desktop/test_sync>server_location, path.substr(0, strlen(this->server_location)).c_str())!=0) {
-		std::cout<<"file change outside the syncing server location:"<<path<<std::endl;
+	if (!this->monitor_path(path))
+	{
 		return;
-	}*/
+	}
 	std::string source_path = change["Source_Path"].get<std::string>();
 	std::string md5;
 	if (!change["Md5"].is_null())
@@ -1196,53 +1194,24 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	switch (change_type)
 	{
 	case 1: //add
+	case 6: //modified
 		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
 	case 2: //delete
 		this->db.delete_file(path.c_str());
 		break;
 	case 3: //move
-		/*this->db.delete_file(source_path.c_str());
-		this->db.add_file(path.c_str(), md5.c_str());*/
-		this->db.move(source_path.c_str(), path.c_str(), commit_id);
-		break;
 	case 4: //rename
-		/*this->db.delete_file(source_path.c_str());
-		this->db.add_file(path.c_str(), md5.c_str());*/
 		this->db.move(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	case 5: //copy
 		this->db.copy(source_path.c_str(), path.c_str(), commit_id);
-		break;
-	case 6: //modified
-		this->db.move(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	default:
 		EXCEPTION("unknown change type.");
 		break;
 	}
 	this->need_sync_server = true;
-	/*{{if eq .ChangeType 1}}
-
-				add
-
-				{{else if eq .ChangeType 2}}
-
-				delete
-
-				{{else if eq .ChangeType 3}}
-
-				move
-
-				{{else if eq .ChangeType 4}}
-
-				rename
-
-				{{else if eq .ChangeType 5}}
-
-				copy
-
-				{{end}}*/
 }
 void filesync::FileSync::check_sync_path()
 {
