@@ -1248,7 +1248,7 @@ start:
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
 #else
-	this->monitor = new common::monitor::win_monitor(this->conf.sync_path);
+	this->monitor = new common::monitor::win_monitor(this->conf.sync_path.string());
 #endif
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
