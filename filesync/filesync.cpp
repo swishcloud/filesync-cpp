@@ -84,9 +84,17 @@ void begin_sync(std::string account, bool get_all_server_files)
 	{
 		filesync->connect();
 		filesync->check_sync_path();
+		std::error_code ec;
+		if (get_all_server_files && !std::filesystem::remove(filesync->conf.db_path.c_str(), ec))
+		{
+			delete filesync;
+			common::print_info(ec.message());
+			return;
+		}
 		filesync->db.init(filesync->conf.db_path.c_str());
 		while (!filesync->get_all_server_files(get_all_server_files))
 			;
+		get_all_server_files = true;
 		bool process_monitor = false;
 		while (1)
 		{
@@ -648,7 +656,11 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 {
 	std::unique_ptr<filesync::sqlite_query_result> u_files;
 	filesync::sqlite_query_result *files;
-	if (path == NULL)
+
+	u_files = this->db.get_files();
+	files = u_files.get();
+	//todo: change to the following commented code after fixed the bug that win_monitor can't get exact deleted path in callback
+	/*if (path == NULL)
 	{
 		u_files = this->db.get_files();
 		files = u_files.get();
@@ -658,7 +670,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		auto relative_path = this->get_relative_path_by_fulllpath(path);
 		u_files = this->db.get_file(relative_path.c_str());
 		files = u_files.get();
-	}
+	}*/
 
 	for (int i = 0; i < files->count; i++)
 	{
@@ -1181,11 +1193,11 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	std::string id = change["Id"].get<std::string>();
 	int change_type = change["ChangeType"].get<int>();
 	std::string path = change["Path"].get<std::string>();
-	if (!this->monitor_path(path))
+	std::string source_path = change["Source_Path"].get<std::string>();
+	if (!this->monitor_path(path) && !this->monitor_path(source_path))
 	{
 		return;
 	}
-	std::string source_path = change["Source_Path"].get<std::string>();
 	std::string md5;
 	if (!change["Md5"].is_null())
 	{
@@ -1203,6 +1215,8 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	case 3: //move
 	case 4: //rename
 		this->db.move(source_path.c_str(), path.c_str(), commit_id);
+		//need call add_file in case the source_path is not recorded
+		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
 	case 5: //copy
 		this->db.copy(source_path.c_str(), path.c_str(), commit_id);
