@@ -46,6 +46,11 @@ namespace filesync
 		std::string max_commit_id;
 		filesync::PATH destination_folder;
 	};
+	struct CMD_SERVER_CLEAN_OPTION
+	{
+		std::string server_id;
+		std::string files_path;
+	};
 } // namespace filesync
 class filesync::FileSync
 {

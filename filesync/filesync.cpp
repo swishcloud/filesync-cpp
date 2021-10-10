@@ -256,6 +256,71 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
 		return;
 	}
 }
+void begin_server_clean(std::string server_id, filesync::PATH files_path)
+{
+	common::print_info(common::string_format("begin cleaning all unused files in current server:%s", server_id.c_str()));
+	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+	std::string url_path = common::string_format("/api/server-file/tobedeleted?id=%s", server_id.c_str());
+	common::http_client c{filesync->cfg.server_ip, common::string_format("%d", filesync->cfg.server_port), url_path.c_str(), ""};
+	c.GET();
+	if (c.error)
+	{
+		common::print_info(c.error.message());
+		exit(1);
+	}
+	auto j = json::parse(c.resp_text);
+	auto err = j["error"];
+	if (!err.is_null())
+	{
+		common::print_info(common::string_format("failed to parse the json literal string:%s", err.get<std::string>().c_str()));
+		exit(1);
+	}
+	auto data = j["data"];
+	std::vector<filesync::server_file> server_files{};
+	for (auto item : data)
+	{
+		filesync::PATH path = files_path.string() + "/" + item["path"].get<std::string>();
+		filesync::server_file server_file{};
+		server_file.local_path = path;
+		server_file.server_file_id = item["id"].get<std::string>();
+		server_files.push_back(server_file);
+		common::print_info(common::string_format("path:%s id:%s", path.string().c_str(), server_file.server_file_id.c_str()));
+	}
+	for (auto &file : server_files)
+	{
+		std::error_code ec;
+		std::string tmp_path = std::filesystem::temp_directory_path().string() + "/" + common::get_file_name(file.local_path.string());
+
+		if (!std::filesystem::is_regular_file(file.local_path.string()))
+		{
+			common::print_info(common::string_format("ERROR:not found the following path or the path isn't a file:%s", file.local_path.string().c_str()));
+			char input[1];
+			printf("Do you want to abort procedure or ignore the above error?[Y/N]");
+			scanf("%s", &input);
+			if (input[0] != 'Y' && input[0] != 'y')
+			{
+				common::print_info("Aborted");
+				exit(1);
+			}
+		}
+		else
+		{
+			common::movebycmd(file.local_path.string(), tmp_path);
+			common::print_info(common::string_format("removed file '%s'", file.local_path.string().c_str()));
+		}
+		http::UrlValues values;
+		values.add("id", file.server_file_id.c_str());
+		c.POST("/api/reset-server-file", values.str, "");
+		if (c.error)
+		{
+			common::movebycmd(tmp_path, file.local_path.string());
+			common::print_info(c.error.message());
+			exit(1);
+		}
+	}
+
+	common::print_info("Finished");
+}
 void CMD_REPORT(CLI::App *parent)
 {
 	auto opt = std::shared_ptr<filesync::CMD_EXPORT_OPTION>{new filesync::CMD_EXPORT_OPTION};
@@ -270,6 +335,16 @@ void CMD_REPORT(CLI::App *parent)
 							 token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", opt->account.c_str())).string();
 							 begin_export(opt->path, opt->commit_id, opt->max_commit_id, opt->destination_folder);
 						 });
+}
+void CMD_SERVER_CLEAN(CLI::App *parent)
+{
+	auto server_cmd = parent->add_subcommand("server", "server command");
+	auto clean_cmd = server_cmd->add_subcommand("clean", "clean all server files which not used");
+	auto opt = std::shared_ptr<filesync::CMD_SERVER_CLEAN_OPTION>{new filesync::CMD_SERVER_CLEAN_OPTION};
+	clean_cmd->add_option("--server_id", opt->server_id, "server id")->required();
+	clean_cmd->add_option("--files_path", opt->files_path, "the path of files repo")->required();
+	clean_cmd->callback([opt]()
+						{ begin_server_clean(opt->server_id, opt->files_path); });
 }
 int main(int argc, char *argv[])
 {
@@ -291,6 +366,7 @@ int main(int argc, char *argv[])
 					 { begin_listen(listen_port, files_path); });
 
 	CMD_REPORT(&app);
+	CMD_SERVER_CLEAN(&app);
 	CLI11_PARSE(app, argc, argv);
 	return 0;
 

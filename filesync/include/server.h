@@ -24,6 +24,11 @@ using boost::asio::ip::tcp;
 
 namespace filesync
 {
+    struct server_file
+    {
+        filesync::PATH local_path;
+        std::string server_file_id;
+    };
     class server
     {
     private:
