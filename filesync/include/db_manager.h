@@ -11,12 +11,13 @@ namespace filesync
 	class sqlite_callback_result;
 	class db_manager;
 	class sqlite_query_result;
-	class action_base{
-		public:
+	class action_base
+	{
+	public:
 		int type;
-		virtual json to_json()=0;
+		virtual json to_json() = 0;
 	};
-	struct create_file_action:action_base
+	struct create_file_action : action_base
 	{
 		char *name;
 		char *md5;
@@ -28,9 +29,9 @@ namespace filesync
 		//create_file_action(create_file_action &&action);
 		~create_file_action();
 
-		json to_json()override;
+		json to_json() override;
 	};
-	struct create_directory_action:action_base
+	struct create_directory_action : action_base
 	{
 		char *path;
 		bool is_hidden;
@@ -39,9 +40,9 @@ namespace filesync
 		create_directory_action();
 		//create_directory_action(create_directory_action &&action);
 		~create_directory_action();
-		json to_json()override;
+		json to_json() override;
 	};
-	struct delete_by_path_action:action_base
+	struct delete_by_path_action : action_base
 	{
 		char *path;
 		char *commit_id;
@@ -51,7 +52,7 @@ namespace filesync
 		delete_by_path_action();
 		//delete_by_path_action(delete_by_path_action &&action);
 		~delete_by_path_action();
-		json to_json()override;
+		json to_json() override;
 	};
 } // namespace filesync
 class filesync::db_manager

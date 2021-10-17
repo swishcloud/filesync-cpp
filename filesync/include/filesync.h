@@ -49,7 +49,8 @@ namespace filesync
 	struct CMD_SERVER_CLEAN_OPTION
 	{
 		std::string server_id;
-		std::string files_path;
+		filesync::PATH files_path;
+		filesync::PATH trash_dir;
 	};
 } // namespace filesync
 class filesync::FileSync

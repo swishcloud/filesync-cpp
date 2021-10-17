@@ -256,11 +256,19 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
 		return;
 	}
 }
-void begin_server_clean(std::string server_id, filesync::PATH files_path)
+void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
 {
-	common::print_info(common::string_format("begin cleaning all unused files in current server:%s", server_id.c_str()));
+	opt.trash_dir = opt.trash_dir.string() + "/trash";
+	std::error_code ec;
+	std::filesystem::create_directory(opt.trash_dir.string(), ec);
+	if (ec)
+	{
+		common::print_info(ec.message());
+		exit(1);
+	}
+	common::print_info(common::string_format("begin cleaning all unused files in current server:%s", opt.server_id.c_str()));
 	filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
-	std::string url_path = common::string_format("/api/server-file/tobedeleted?id=%s", server_id.c_str());
+	std::string url_path = common::string_format("/api/server-file/tobedeleted?id=%s", opt.server_id.c_str());
 	common::http_client c{filesync->cfg.server_ip, common::string_format("%d", filesync->cfg.server_port), url_path.c_str(), ""};
 	c.GET();
 	if (c.error)
@@ -279,7 +287,7 @@ void begin_server_clean(std::string server_id, filesync::PATH files_path)
 	std::vector<filesync::server_file> server_files{};
 	for (auto item : data)
 	{
-		filesync::PATH path = files_path.string() + "/" + item["path"].get<std::string>();
+		filesync::PATH path = opt.files_path.string() + "/" + item["path"].get<std::string>();
 		filesync::server_file server_file{};
 		server_file.local_path = path;
 		server_file.server_file_id = item["id"].get<std::string>();
@@ -343,8 +351,9 @@ void CMD_SERVER_CLEAN(CLI::App *parent)
 	auto opt = std::shared_ptr<filesync::CMD_SERVER_CLEAN_OPTION>{new filesync::CMD_SERVER_CLEAN_OPTION};
 	clean_cmd->add_option("--server_id", opt->server_id, "server id")->required();
 	clean_cmd->add_option("--files_path", opt->files_path, "the path of files repo")->required();
+	clean_cmd->add_option("--trash_dir", opt->trash_dir, "the path to save deleted files temporarily")->required();
 	clean_cmd->callback([opt]()
-						{ begin_server_clean(opt->server_id, opt->files_path); });
+						{ begin_server_clean(*opt); });
 }
 int main(int argc, char *argv[])
 {
