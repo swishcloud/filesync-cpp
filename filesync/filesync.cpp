@@ -263,7 +263,7 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
 	std::filesystem::create_directory(opt.trash_dir.string(), ec);
 	if (ec)
 	{
-		common::print_info(ec.message());
+		common::print_info(common::string_format("%s:%s", opt.trash_dir.string().c_str(), ec.message().c_str()));
 		exit(1);
 	}
 	common::print_info(common::string_format("begin cleaning all unused files in current server:%s", opt.server_id.c_str()));
@@ -297,7 +297,7 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
 	for (auto &file : server_files)
 	{
 		std::error_code ec;
-		std::string tmp_path = std::filesystem::temp_directory_path().string() + "/" + common::get_file_name(file.local_path.string());
+		std::string tmp_path = opt.trash_dir.string() + "/" + common::get_file_name(file.local_path.string());
 
 		if (!std::filesystem::is_regular_file(file.local_path.string()))
 		{
