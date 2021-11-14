@@ -19,7 +19,7 @@ namespace filesync
 		ChangeCommitter(FileSync &fs);
 		~ChangeCommitter();
 		ChangeCommitter *add_action(action_base *action);
-		bool commit();
+		bool commit(std::string token = std::string{});
 	};
 
 } // namespace filesync

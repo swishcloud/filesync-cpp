@@ -22,7 +22,7 @@ filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(action_base *ac
 	}
 	return this;
 }
-bool filesync::ChangeCommitter::commit()
+bool filesync::ChangeCommitter::commit(std::string token)
 {
 	json j_directories_arr = json::array();
 	json j_file_arr = json::array();
@@ -51,12 +51,11 @@ bool filesync::ChangeCommitter::commit()
 	post_data.push_back({"file_actions", j_file_arr.dump().c_str()});
 	post_data.push_back({"delete_by_path_actions", j_delete_arr.dump().c_str()});
 	std::string resp;
+	bool ok = false;
 	if (this->actions.size() > 0)
 	{
-		char *token = filesync::get_token();
-		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token};
+		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token != std::string{} ? token : fs.get_token()};
 		c.POST(post_data);
-		delete[] token;
 		if (c.error)
 		{
 			common::print_info(c.error.message());
@@ -67,8 +66,12 @@ bool filesync::ChangeCommitter::commit()
 		{
 			common::print_info(common::string_format("error posting files to server:%s", j["error"].get<std::string>().c_str()));
 		}
+		else
+		{
+			ok = true;
+		}
 	}
 
 	this->actions.clear();
-	return true;
+	return ok;
 }

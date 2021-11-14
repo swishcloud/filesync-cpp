@@ -52,6 +52,17 @@ namespace filesync
 		filesync::PATH files_path;
 		filesync::PATH trash_dir;
 	};
+	struct CMD_UPLOAD_OPTION
+	{
+		std::string filename;
+		filesync::PATH path;
+		std::string md5;
+		std::string token;
+		std::string account;
+		filesync::PATH location;
+		size_t size;
+	};
+	int run(int argc, const char *argv[]);
 } // namespace filesync
 class filesync::FileSync
 {
@@ -87,7 +98,6 @@ private:
 	char *get_relative_path(const char *server_path);
 	std::string get_relative_path_by_fulllpath(const char *path);
 	std::filesystem::path relative_to_server_path(std::string relative_path);
-	bool upload_file(std::string full_path, const char *md5, long size);
 	std::mutex _local_file_changes_mutex;
 	std::queue<common::monitor::change *> _local_file_changes;
 	std::vector<std::string> errs;
@@ -97,6 +107,7 @@ private:
 public:
 	static void monitor_cb(common::monitor::change *c, void *obj);
 	common::monitor::MONITOR *monitor;
+	std::string account;
 	filesync::PartitionConf conf;
 	filesync::db_manager db;
 	filesync::tcp_client *_tcp_client;
@@ -105,6 +116,7 @@ public:
 	FileSync(char *server_location);
 	~FileSync();
 	void connect();
+	bool upload_file(std::shared_ptr<std::istream> fs, const char *md5, long size, std::string token);
 	common::error download_file(std::string server_path, std::string commit_id, std::string save_path);
 	std::vector<File> get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok);
 	std::string get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback);
@@ -127,6 +139,7 @@ public:
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
 	bool monitor_path(PATH path);
+	std::string get_token();
 };
 struct filesync::File
 {

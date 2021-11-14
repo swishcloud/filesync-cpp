@@ -24,7 +24,6 @@ namespace filesync
         PATH(std::string str, bool trimEnd = false);
     };
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";
-    char *get_token();
     std::string get_parent_dir(const char *filename);
     std::string format_path(std::string str);
     bool compare_md5(const char *a, const char *b);
