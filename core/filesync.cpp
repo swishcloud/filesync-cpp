@@ -990,6 +990,7 @@ start:
 	if (c.error)
 	{
 		print_info("http get failed");
+		std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		return false;
 	}
 	auto j = json::parse(c.resp_text);

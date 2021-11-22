@@ -297,6 +297,11 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
             common::print_info(std::string("please specify the parameter SIZE."));
             return;
         }
+        if (opt.md5.empty())
+        {
+            common::print_info(std::string("please specify the parameter MD5 when PATH not specified."));
+            return;
+        }
         fs = std::shared_ptr<std::istream>{&std::cin, [](void *) {}};
         if (opt.filename.empty())
         {
@@ -357,7 +362,7 @@ void CMD_UPLOAD(CLI::App *parent)
     auto opt = std::shared_ptr<filesync::CMD_UPLOAD_OPTION>{new filesync::CMD_UPLOAD_OPTION};
     opt->size = SIZE_MAX;
     upload_cmd->add_option("--filename", opt->filename, "the filename to save on server");
-    upload_cmd->add_option("--md5", opt->md5, "the md5 of file to upload")->required();
+    upload_cmd->add_option("--md5", opt->md5, "the md5 of file to upload");
     upload_cmd->add_option("--location", opt->location, "the server path where save the uploaded file")->required();
     upload_cmd->add_option("--token", opt->token);
     upload_cmd->add_option("--account", opt->account);
