@@ -30,8 +30,7 @@ namespace filesync
                                {
                                    common::print_debug(common::string_format("Error reading message:%s,closing this session...", error.message()));
                                    session->close();
-                               }
-                           });
+                               } });
     }
     server::server(short port, std::string file_location, common::http_client &http_client) : tcp_server{port}, ip{"0.0.0.0"}, port{port}, file_location{file_location}, http_client{http_client}
     {
@@ -81,8 +80,7 @@ namespace filesync
                                                    cb(common::string_format("Faile to send a stream:%s", error.message()));
                                                }
                                            },
-                                           NULL);
-                                   });
+                                           NULL); });
             }
         }
         catch (const std::exception &e)
@@ -175,7 +173,7 @@ namespace filesync
             return;
         }
         filesync::print_debug("reading bytes into just created block file");
-        //receive file
+        // receive file
         s->read(
             msg.body_size, [written, os, block_path, msg, this, s, cb](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
             {
@@ -306,8 +304,7 @@ namespace filesync
                 {
                     error = common::string_format("Closing socket,error:%s", e.what());
                     cb(error);
-                }
-            },
+                } },
             NULL);
     }
     std::string server::get_file_path(std::string name)
@@ -325,7 +322,7 @@ namespace filesync
     {
         tcp_server.listen();
     }
-    //begin client
+    // begin client
     tcp_client::tcp_client(std::string server_host, std::string server_port) : server_host{server_host}, server_port{server_port}, closed{false}
     {
         xclient.session.timeout = 60 * 4;
@@ -343,10 +340,8 @@ namespace filesync
         { promise.set_value(true); };
         xclient.on_connect_fail = [&promise](XTCP::tcp_client *client)
         { promise.set_value(false); };
-        xclient.session.on_closed = [this](XTCP::tcp_session *session)
-        {
-            this->closed = true;
-        };
+        xclient.session.on_closed.subscribe([this](XTCP::tcp_session *session)
+                                            { this->closed = true; });
         xclient.start(this->server_host.c_str(), this->server_port.c_str());
         return future.get();
     }
@@ -361,6 +356,6 @@ namespace filesync
         XTCP::send_message(&this->xclient.session, msg, NULL);
         std::shared_ptr<std::istream> fs{new std::ifstream(path, std::ios::binary)};
         fs->seekg(offset, std::ios_base::beg);
-        assert(false); //unfinished;
+        assert(false); // unfinished;
     }
 } // namespace filesync
