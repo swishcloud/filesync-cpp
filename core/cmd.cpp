@@ -9,7 +9,14 @@ void begin_sync(std::string account, bool get_all_server_files)
         common::print_info("will begin getting all server files in 3 seconds.Be patient...");
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 3));
     }
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     filesync->account = account;
     try
     {
@@ -95,7 +102,14 @@ void begin_sync(std::string account, bool get_all_server_files)
 }
 void begin_listen(std::string listen_port, std::string files_path)
 {
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
 #ifdef __linux__
     filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
@@ -128,7 +142,14 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
             return;
         }
     }
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     filesync->account = account;
     filesync->connect();
     std::string first_server_path = path.string();
@@ -166,8 +187,7 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
                                                     filesync->destroy_tcp_client();
                                                     common::print_info(err.message());
                                                     failed_paths.push_back(exported_path);
-                                                }
-                                            });
+                                                } });
     if (!error.empty())
     {
         common::print_info(error);
@@ -199,7 +219,15 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
         exit(1);
     }
     common::print_info(common::string_format("begin cleaning all unused files in current server:%s", opt.server_id.c_str()));
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     std::string url_path = common::string_format("/api/server-file/tobedeleted?id=%s", opt.server_id.c_str());
     common::http_client c{filesync->cfg.server_ip, common::string_format("%d", filesync->cfg.server_port), url_path.c_str(), ""};
     c.GET();
@@ -209,10 +237,9 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
         exit(1);
     }
     auto j = json::parse(c.resp_text);
-    auto err = j["error"];
-    if (!err.is_null())
+    if (!j["error"].is_null())
     {
-        common::print_info(common::string_format("failed to parse the json literal string:%s", err.get<std::string>().c_str()));
+        common::print_info(common::string_format("failed to parse the json literal string:%s", j["error"].get<std::string>().c_str()));
         exit(1);
     }
     auto data = j["data"];
@@ -265,10 +292,10 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 {
     common::print_info(common::string_format("md5:%s location:%s", opt.md5.c_str(), opt.location.string().c_str()));
     /*std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-	for (std::string line; std::getline(std::cin, line);)
-	{
-		common::print_info(line);
-	}*/
+    for (std::string line; std::getline(std::cin, line);)
+    {
+        common::print_info(line);
+    }*/
     std::shared_ptr<std::istream> fs;
     if (!opt.path.string().empty())
     {
@@ -309,7 +336,14 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
             return;
         }
     }
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/")};
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     filesync->account = opt.account;
     if (opt.account.empty() && opt.token.empty() || !opt.account.empty() && !opt.token.empty())
     {

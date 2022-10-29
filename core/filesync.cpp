@@ -135,7 +135,7 @@ void filesync::FileSync::connect()
 		if (!tcp_client.connect())
 			throw common::exception("connect Web TCP Server failed");
 
-		//connect web server
+		// connect web server
 		XTCP::message msg;
 		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 		msg.addHeader({"token", get_token()});
@@ -179,7 +179,7 @@ bool filesync::FileSync::sync_server()
 {
 	if (!this->need_sync_server)
 	{
-		//todo:uncomment this. filesync::print_info("Server have no changes.");
+		// todo:uncomment this. filesync::print_info("Server have no changes.");
 		return true;
 	}
 	std::vector<std::string> errs;
@@ -194,9 +194,9 @@ bool filesync::FileSync::sync_server()
 		const char *commit_id = files->get_value("commit_id", i);
 		bool is_deleted = is_deleted_str[0] == '1';
 		std::unique_ptr<char[]> full_path{get_full_path(file_name)};
-		//std::cout << "sync_server>" << full_path.get() << std::endl;
+		// std::cout << "sync_server>" << full_path.get() << std::endl;
 
-		//struct File object
+		// struct File object
 		File f = this->server_file(file_name, commit_id, md5 == NULL);
 		if (f.server_path == "/")
 		{
@@ -208,12 +208,12 @@ bool filesync::FileSync::sync_server()
 			this->db.delete_file_hard(f.server_path.c_str());
 			continue;
 		}
-		//check if server has delete the file, if yes then delete the file locally, and hard delete the file from db
+		// check if server has delete the file, if yes then delete the file locally, and hard delete the file from db
 		if (is_deleted)
 		{
 			std::error_code err;
 			if (std::filesystem::remove_all(full_path.get(), err) == -1)
-			{ //return 0 if full_path not exists, return -1 on error.
+			{ // return 0 if full_path not exists, return -1 on error.
 				std::cout << err.message() << std::endl;
 				std::string err = common::string_format("Failed to remove file:%s", full_path.get());
 				std::cout << err << std::endl;
@@ -226,7 +226,7 @@ bool filesync::FileSync::sync_server()
 			continue;
 		}
 
-		//check if it's a directory, if yes then create it.
+		// check if it's a directory, if yes then create it.
 		if (f.is_directory)
 		{
 			if (!compare_md5(DIRECTORY_MD5, local_md5))
@@ -243,7 +243,7 @@ bool filesync::FileSync::sync_server()
 		}
 		else
 		{
-			//check if the file has not been downloaded or the file is out of date, if it's in either case then download/re-download the file.
+			// check if the file has not been downloaded or the file is out of date, if it's in either case then download/re-download the file.
 			if (local_md5 == NULL || !compare_md5(md5, local_md5))
 			{
 				bool has_downloaded = false;
@@ -283,7 +283,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 {
 	auto relative_path = this->get_relative_path_by_fulllpath(path);
 	auto file_db = db.get_file(relative_path.c_str());
-	//filesync::format_path(path);
+	// filesync::format_path(path);
 
 	if (std::filesystem::exists(path))
 	{
@@ -327,7 +327,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				std::string md5;
 				bool need_upload = false;
 				if (file_db.get()->count == 0)
-				{ //this is a added local file to be upload.
+				{ // this is a added local file to be upload.
 					md5 = common::file_md5(path);
 					need_upload = true;
 				}
@@ -337,7 +337,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					const char *server_md5 = file_db.get()->get_value("md5");
 					const char *local_md5 = file_db.get()->get_value("local_md5");
 					if (!compare_md5(md5.c_str(), local_md5 ? local_md5 : server_md5))
-					{ //this file has been modified locally.
+					{ // this file has been modified locally.
 						need_upload = true;
 					}
 				}
@@ -374,7 +374,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 
 	u_files = this->db.get_files();
 	files = u_files.get();
-	//todo: change to the following commented code after fixed the bug that win_monitor can't get exact deleted path in callback
+	// todo: change to the following commented code after fixed the bug that win_monitor can't get exact deleted path in callback
 	/*if (path == NULL)
 	{
 		u_files = this->db.get_files();
@@ -408,7 +408,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 			continue;
 		}
 		if (local_md5 && !std::filesystem::exists(full_path))
-		{ //this file has been deleted locally.
+		{ // this file has been deleted locally.
 			delete_by_path_action *action = new delete_by_path_action();
 			action->commit_id = common::strcpy(commit_id);
 			action->file_type = is_directory ? 2 : 1;
@@ -487,9 +487,9 @@ bool filesync::FileSync::upload_file(std::shared_ptr<std::istream> fs, const cha
 	}
 	else
 	{
-		//std::cout << "OK:" << path << " "  << std::endl;
+		// std::cout << "OK:" << path << " "  << std::endl;
 	}
-	//std::cout << data << std::endl;
+	// std::cout << data << std::endl;
 	auto is_completed = data["is_completed"].get<std::string>();
 	auto ip = data["ip"].get<std::string>();
 	auto port = data["port"].get<std::string>();
@@ -502,7 +502,7 @@ bool filesync::FileSync::upload_file(std::shared_ptr<std::istream> fs, const cha
 	{
 		std::cout << "WARNING:"
 				  << "the file has already uploaded,skiping uploading." << std::endl;
-		//this->on_file_uploaded(full_path, md5);
+		// this->on_file_uploaded(full_path, md5);
 		return true;
 	}
 	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
@@ -537,8 +537,7 @@ bool filesync::FileSync::upload_file(std::shared_ptr<std::istream> fs, const cha
 			if (error || completed)
 			{
 				promise.set_value(error);
-			}
-		},
+			} },
 		NULL);
 	err = promise.get_future().get();
 	if (err)
@@ -556,7 +555,7 @@ bool filesync::FileSync::upload_file(std::shared_ptr<std::istream> fs, const cha
 	}
 	if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
 	{
-		//this->on_file_uploaded(full_path, md5);
+		// this->on_file_uploaded(full_path, md5);
 		return true;
 	}
 	else
@@ -576,10 +575,10 @@ filesync::tcp_client *filesync::FileSync::get_tcp_client()
 	{
 		while (1)
 		{
-			//create the tcp client
+			// create the tcp client
 			common::print_debug("creating a tcp client...");
 			delete _tcp_client;
-			//todo: make tcp server port configurable
+			// todo: make tcp server port configurable
 			//_tcp_client = new filesync::tcp_client{cfg.server_ip, common::string_format("%d", 8008)};
 			_tcp_client = new filesync::tcp_client{this->cfg.server_ip.c_str(), common::string_format("%d", 8008)};
 			if (!_tcp_client->connect())
@@ -689,8 +688,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 			{
 				dl_promise.set_value(error);
 				std::cout << '\n';
-			}
-		},
+			} },
 		NULL);
 	err = dl_promise.get_future().get();
 	if (err)
@@ -891,7 +889,7 @@ bool filesync::FileSync::get_all_server_files(bool force_getting_all)
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
 		bool ok = false;
 		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str(), &ok);
-		//auto files = this->get_server_files("/", "", "cd8b07e5-8742-4818-9331-80a098613467", &ok);
+		// auto files = this->get_server_files("/", "", "cd8b07e5-8742-4818-9331-80a098613467", &ok);
 		this->conf.commit_id = this->conf.max_commit_id;
 		this->conf.save();
 		return ok;
@@ -918,20 +916,20 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	}
 	switch (change_type)
 	{
-	case 1: //add
-	case 6: //modified
+	case 1: // add
+	case 6: // modified
 		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
-	case 2: //delete
+	case 2: // delete
 		this->db.delete_file(path.c_str());
 		break;
-	case 3: //move
-	case 4: //rename
+	case 3: // move
+	case 4: // rename
 		this->db.move(source_path.c_str(), path.c_str(), commit_id);
-		//need call add_file in case the source_path is not recorded
+		// need call add_file in case the source_path is not recorded
 		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
-	case 5: //copy
+	case 5: // copy
 		this->db.copy(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	default:
@@ -1003,7 +1001,7 @@ start:
 	}
 	if (data.is_null())
 	{
-		//std::cout << "WARNING:"
+		// std::cout << "WARNING:"
 		//		  << "not got file changes." << std::endl;
 		this->conf.max_commit_id = this->conf.commit_id;
 		this->conf.save();
@@ -1030,9 +1028,9 @@ void filesync::FileSync::print()
 	}
 }
 
-filesync::FileSync::FileSync(char *server_location)
+filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 {
-	cfg.load();
+	this->cfg = cfg;
 	this->server_location = server_location;
 	this->db = filesync::db_manager{};
 	this->committer = new ChangeCommitter(*this);

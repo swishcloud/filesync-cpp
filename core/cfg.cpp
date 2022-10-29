@@ -12,10 +12,20 @@ filesync::CONFIG::CONFIG()
 	{
 		filesync::print_info("debug mode on");
 	}
-	load();
 }
-void filesync::CONFIG::load()
+common::error filesync::CONFIG::load()
 {
+	// check if datapath directory exists
+	if (!std::filesystem::exists(datapath))
+	{
+		std::error_code ec;
+		filesync::print_info(common::string_format("create directory '%s'", datapath.string().c_str()));
+		if (!std::filesystem::create_directories(datapath, ec))
+		{
+			return common::error(ec.message());
+		}
+	}
+
 	std::ifstream in(path());
 	if (in.is_open())
 	{
@@ -35,6 +45,7 @@ void filesync::CONFIG::load()
 	}
 
 	save();
+	return NULL;
 }
 void filesync::CONFIG::save()
 {
@@ -65,11 +76,6 @@ void filesync::CONFIG::save()
 std::string filesync::CONFIG::path()
 {
 	auto path = std::filesystem::path(datapath).append(this->debug_mode ? "cfg_debug" : "cfg");
-	auto parent = filesync::get_parent_dir(path.string().c_str());
-	if (!std::filesystem::exists(parent))
-	{
-		assert(std::filesystem::create_directories(parent));
-	}
 	return path.string();
 }
 
@@ -82,7 +88,7 @@ void filesync::PartitionConf::init(bool debug_mode)
 	this->db_path = std::filesystem::path(folder_path).append("filesync.db").u8string();
 	this->partition_cfg_path = std::filesystem::path(folder_path).append("cfg").u8string();
 
-	//read cofigurations from partition_cfg_path
+	// read cofigurations from partition_cfg_path
 	std::ifstream in(partition_cfg_path);
 	if (in.is_open())
 	{

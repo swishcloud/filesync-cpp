@@ -22,10 +22,10 @@ namespace filesync
 		int server_tcp_port;
 		bool debug_mode;
 		CONFIG();
-		CONFIG(const CONFIG &) = delete;
+		// CONFIG(const CONFIG &) = delete;
 		~CONFIG();
 		void save();
-		void load();
+		common::error load();
 		std::string path();
 	};
 	class PartitionConf

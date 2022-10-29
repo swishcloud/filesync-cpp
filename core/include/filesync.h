@@ -113,7 +113,7 @@ public:
 	filesync::tcp_client *_tcp_client;
 	CONFIG cfg;
 	ChangeCommitter *committer;
-	FileSync(char *server_location);
+	FileSync(char *server_location, CONFIG cfg);
 	~FileSync();
 	void connect();
 	bool upload_file(std::shared_ptr<std::istream> fs, const char *md5, long size, std::string token);
