@@ -100,7 +100,6 @@ private:
 	std::filesystem::path relative_to_server_path(std::string relative_path);
 	std::mutex _local_file_changes_mutex;
 	std::queue<common::monitor::change *> _local_file_changes;
-	std::vector<std::string> errs;
 	void on_file_downloaded(PATH full_path, std::string md5);
 	void on_file_uploaded(PATH full_path, std::string md5);
 
@@ -135,7 +134,6 @@ public:
 	File server_file(std::string server_path, std::string commit_id, bool is_directory);
 	void add_local_file_change(common::monitor::change *change);
 	common::monitor::change *get_local_file_change();
-	bool clear_errs();
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
 	bool monitor_path(PATH path);

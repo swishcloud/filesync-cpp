@@ -329,6 +329,11 @@ namespace filesync
     }
     tcp_client::~tcp_client()
     {
+        xclient.shutdown();
+        if (th.joinable())
+        {
+            th.join();
+        }
     }
     bool tcp_client::connect()
     {
@@ -342,7 +347,8 @@ namespace filesync
         { promise.set_value(false); };
         xclient.session.on_closed.subscribe([this](XTCP::tcp_session *session)
                                             { this->closed = true; });
-        xclient.start(this->server_host.c_str(), this->server_port.c_str());
+        th = std::thread([this]()
+                         { xclient.start(this->server_host.c_str(), this->server_port.c_str()); });
         return future.get();
     }
     void tcp_client::send_file(std::string path, size_t offset)

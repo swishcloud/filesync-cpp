@@ -6,7 +6,7 @@ set(CORE_TARGET_NAME filesync-core)
 find_package(TCP REQUIRED)
 find_package(COMMON REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(Boost REQUIRED COMPONENTS date_time locale regex thread program_options)
+find_package(Boost 1.75.0 REQUIRED COMPONENTS date_time locale regex thread program_options)
 find_package(nlohmann_json 3.2.0 REQUIRED)
 add_compile_definitions("WIN32_LEAN_AND_MEAN")
 # Add source to this project's executable.

@@ -32,13 +32,13 @@ namespace filesync
     class server
     {
     private:
-        //private data
+        // private data
         common::http_client &http_client;
         std::string ip;
         short port;
         std::unique_ptr<std::thread> thread;
         std::string file_location;
-        //private functions
+        // private functions
         void do_accept();
         void async_receive_file(XTCP::message &msg, XTCP::tcp_session *s);
         std::string get_file_path(std::string name);
@@ -58,6 +58,7 @@ namespace filesync
     private:
         std::string server_host;
         std::string server_port;
+        std::thread th;
 
     public:
         bool closed;

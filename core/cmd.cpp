@@ -36,10 +36,6 @@ void begin_sync(std::string account, bool get_all_server_files)
         bool process_monitor = false;
         while (1)
         {
-            if (!filesync->clear_errs())
-            {
-                continue;
-            }
             if (!filesync->get_file_changes())
             {
                 continue;
@@ -66,14 +62,7 @@ void begin_sync(std::string account, bool get_all_server_files)
                     {
                         procoss_monitor_failed = true;
                     }
-                    if (procoss_monitor_failed)
-                    {
-                        filesync->add_local_file_change(local_change);
-                    }
-                    else
-                    {
-                        delete (local_change);
-                    }
+                    delete local_change;
                 }
             }
             else
@@ -90,7 +79,16 @@ void begin_sync(std::string account, bool get_all_server_files)
                 filesync::print_info("begin processing  monitor...");
             }
             if (!procoss_monitor_failed)
-                filesync->committer->commit();
+            {
+                if (!filesync->committer->commit())
+                    process_monitor = false;
+            }
+            else
+            {
+
+                process_monitor = false;
+                filesync->committer->clear();
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(5000));
         }
     }

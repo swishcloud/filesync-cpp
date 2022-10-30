@@ -283,7 +283,13 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 {
 	auto relative_path = this->get_relative_path_by_fulllpath(path);
 	auto file_db = db.get_file(relative_path.c_str());
-	// filesync::format_path(path);
+
+	// check if the path is need to be synced
+	if (!this->monitor_path(relative_path) && relative_path != "/")
+	{
+		common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
+		return true;
+	}
 
 	if (std::filesystem::exists(path))
 	{
@@ -298,15 +304,6 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					return false;
 				}
 			}
-			if (relative_path == "/")
-			{
-				return true;
-			}
-			if (!this->monitor_path(relative_path))
-			{
-				common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
-				return true;
-			}
 			if (file_db.get()->count == 0)
 			{
 				filesync::create_directory_action *action = new filesync::create_directory_action();
@@ -317,11 +314,6 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 		}
 		else
 		{
-			if (!this->monitor_path(relative_path))
-			{
-				common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
-				return true;
-			}
 			try
 			{
 				std::string md5;
@@ -348,8 +340,8 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 					std::cout << "UPLOAD " << (r ? "OK" : "Failed") << " :" << path << std::endl;
 					if (!r)
 					{
-						errs.push_back(common::string_format("failed to upload %s", path));
 						this->get_tcp_client()->xclient.session.close();
+						return false;
 					}
 					else
 					{
@@ -361,11 +353,10 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 			{
 				std::string err = common::string_format("%s", e.what());
 				std::cout << err << std::endl;
-				errs.push_back(err);
 			}
 		}
 	}
-	return errs.size() == 0;
+	return true;
 }
 bool filesync::FileSync::sync_local_deleted(const char *path)
 {
@@ -563,11 +554,6 @@ bool filesync::FileSync::upload_file(std::shared_ptr<std::istream> fs, const cha
 		filesync::print_info(common::string_format("invalid msg type."));
 		return false;
 	}
-}
-bool filesync::FileSync::clear_errs()
-{
-	this->errs.clear();
-	return true;
 }
 filesync::tcp_client *filesync::FileSync::get_tcp_client()
 {
@@ -831,7 +817,7 @@ bool filesync::FileSync::download_file(File &file)
 		this->db.update_local_md5(file.server_path.c_str(), md5.get<std::string>().c_str());
 	}
 	return is_downloaded;
-}
+}w
 */
 std::vector<filesync::File> filesync::FileSync::get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok)
 {
@@ -1135,7 +1121,7 @@ std::string filesync::FileSync::get_token()
 	{
 		return m[1].str();
 	}
-	return NULL;
+	return std::string();
 }
 filesync::File filesync::FileSync::local_file(std::string full_path, bool is_directory)
 {
@@ -1180,6 +1166,21 @@ void filesync::FileSync::monitor_cb(common::monitor::change *c, void *obj)
 void filesync::FileSync::add_local_file_change(common::monitor::change *change)
 {
 	std::lock_guard<std::mutex> guard(_local_file_changes_mutex);
+	std::queue<common::monitor::change *> changes;
+	changes.swap(_local_file_changes);
+	while (!changes.empty())
+	{
+		auto *i = changes.front();
+		changes.pop();
+		if (i->path != change->path)
+		{
+			this->_local_file_changes.push(i);
+		}
+		else
+		{
+			delete i;
+		}
+	}
 	this->_local_file_changes.push(change);
 }
 common::monitor::change *filesync::FileSync::get_local_file_change()

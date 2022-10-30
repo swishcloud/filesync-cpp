@@ -22,6 +22,10 @@ filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(action_base *ac
 	}
 	return this;
 }
+void filesync::ChangeCommitter::clear()
+{
+	this->actions.clear();
+}
 bool filesync::ChangeCommitter::commit(std::string token)
 {
 	json j_directories_arr = json::array();
@@ -70,6 +74,10 @@ bool filesync::ChangeCommitter::commit(std::string token)
 		{
 			ok = true;
 		}
+	}
+	else
+	{
+		ok = true;
 	}
 
 	this->actions.clear();
