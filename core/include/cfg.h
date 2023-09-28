@@ -8,6 +8,7 @@
 using json = nlohmann::json;
 namespace filesync
 {
+	const int GET_SERVER_FILES_RETRY_MAX_TIMES = 10;
 #ifdef __linux__
 	const std::filesystem::path datapath = "/var/FILESYNC";
 #else
@@ -30,6 +31,9 @@ namespace filesync
 	};
 	class PartitionConf
 	{
+	private:
+		void load();
+
 	public:
 		std::string max_commit_id;
 		std::string first_commit_id;
@@ -39,8 +43,9 @@ namespace filesync
 		std::string partition_cfg_path;
 		PATH sync_path;
 		std::vector<PATH> monitor_paths;
-		void init(bool debug_mode);
+		static PartitionConf create(bool debug_mode, std::string partition_id, bool reuse);
 		void save();
+		void deleteFile();
 		std::string get_tmp_dir(std::error_code &ec);
 	};
 } // namespace filesync

@@ -87,7 +87,7 @@ void filesync::FileSync::on_file_uploaded(PATH full_path, std::string md5)
 std::string filesync::FileSync::get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback)
 {
 	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id.c_str(), max_commit_id.c_str());
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(account)};
 	while (1)
 	{
 		c.GET();
@@ -127,18 +127,21 @@ std::string filesync::FileSync::get_server_files(std::string path, std::string c
 	}
 	return "";
 }
-void filesync::FileSync::connect()
+filesync::FSConnectResult filesync::FileSync::connect(std::string serverip, std::string port)
 {
+start:
+	FSConnectResult r;
+
 	try
 	{
-		tcp_client tcp_client{cfg.server_ip, common::string_format("%d", cfg.server_tcp_port)};
+		tcp_client tcp_client{serverip, port};
 		if (!tcp_client.connect())
 			throw common::exception("connect Web TCP Server failed");
 
 		// connect web server
 		XTCP::message msg;
 		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
-		msg.addHeader({"token", get_token()});
+		msg.addHeader({"token", get_token(account)});
 		common::error err;
 		XTCP::send_message(&tcp_client.xclient.session, msg, err);
 		if (err)
@@ -155,16 +158,15 @@ void filesync::FileSync::connect()
 		{
 			throw common::exception("connection failed");
 		}
-		conf.max_commit_id = reply.getHeaderValue<std::string>("max_commit_id");
-		conf.first_commit_id = reply.getHeaderValue<std::string>("first_commit_id");
-		conf.partition_id = reply.getHeaderValue<std::string>("partition_id");
-
-		cfg.save();
-		conf.init(cfg.debug_mode);
-		if (!std::filesystem::exists(conf.db_path))
-		{
-			conf.commit_id.clear();
-		}
+		r.max_commit_id = reply.getHeaderValue<std::string>("max_commit_id");
+		r.first_commit_id = reply.getHeaderValue<std::string>("first_commit_id");
+		r.partition_id = reply.getHeaderValue<std::string>("partition_id");
+		/* 	cfg.save();
+			conf.init(cfg.debug_mode);
+				if (!std::filesystem::exists(conf.db_path))
+				{
+					conf.commit_id.clear();
+				} */
 	}
 	catch (const std::exception &e)
 	{
@@ -172,8 +174,9 @@ void filesync::FileSync::connect()
 		int delay = 10000;
 		std::cout << "reconnect in " << delay / 1000 << "s" << std::endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-		connect();
+		goto start;
 	}
+	return r;
 }
 bool filesync::FileSync::sync_server()
 {
@@ -336,7 +339,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				if (need_upload)
 				{
 					auto file_size = std::filesystem::file_size(path);
-					auto r = this->upload_file(std::shared_ptr<std::istream>{new std::ifstream(path, std::ios::binary)}, md5.c_str(), file_size, get_token());
+					auto r = this->upload_file(std::shared_ptr<std::istream>{new std::ifstream(path, std::ios::binary)}, md5.c_str(), file_size, get_token(account));
 					std::cout << "UPLOAD " << (r ? "OK" : "Failed") << " :" << path << std::endl;
 					if (!r)
 					{
@@ -611,7 +614,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 {
 	tcp_client *tcp_client = this->get_tcp_client();
 	std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", common::url_encode(server_path.c_str()).c_str(), commit_id.c_str());
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(account)};
 	c.GET();
 	if (c.error)
 	{
@@ -632,7 +635,7 @@ common::error filesync::FileSync::download_file(std::string server_path, std::st
 	XTCP::message msg;
 	msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
 	msg.addHeader({"path", path.get<std::string>()});
-	msg.addHeader({TokenHeaderKey, get_token()});
+	msg.addHeader({TokenHeaderKey, get_token(account)});
 	common::error err;
 	XTCP::send_message(&tcp_client->xclient.session, msg, err);
 	if (err)
@@ -826,7 +829,7 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(std::string pat
 	std::cout << path << std::endl;
 	std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(this->relative_to_server_path(path).string().c_str()).c_str(), commit_id.c_str(), max_commit_id.c_str());
 
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(account)};
 	while (1)
 	{
 		c.GET();
@@ -868,17 +871,24 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(std::string pat
 	*ok = true;
 	return files;
 }
-bool filesync::FileSync::get_all_server_files(bool force_getting_all)
+bool filesync::FileSync::get_all_server_files(int times)
 {
+	if (times < 0)
+	{
+		return false;
+	}
 	this->need_sync_server = true;
-	if (this->conf.commit_id.empty() || force_getting_all)
+	if (this->conf.commit_id.empty())
 	{
 		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
 		bool ok = false;
 		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str(), &ok);
-		// auto files = this->get_server_files("/", "", "cd8b07e5-8742-4818-9331-80a098613467", &ok);
 		this->conf.commit_id = this->conf.max_commit_id;
 		this->conf.save();
+		if (!ok)
+		{
+			return get_all_server_files(times--);
+		}
 		return ok;
 	}
 	else
@@ -925,52 +935,16 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	}
 	this->need_sync_server = true;
 }
-void filesync::FileSync::check_sync_path()
+common::error filesync::FileSync::check_sync_path()
 {
-start:
+	common::error err;
 	if (this->conf.sync_path.string().empty())
 	{
-		std::cout << "please enter the path of sync location:";
-		std::string typed;
-		std::cin >> typed;
-		if (!std::filesystem::is_directory(typed))
-		{
-			std::cout << "not found the path or it is not a directory." << std::endl;
-			goto start;
-		}
-		/*if (!std::filesystem::is_empty(typed)) {
-			std::cout << "the directory you specified is not a empty directory." << std::endl;
-			goto start;
-		}*/
-		if (std::filesystem::exists(this->conf.db_path))
-		{
-			std::error_code err;
-			std::cout << "deleting " << this->conf.db_path << std::endl;
-			if (!std::filesystem::remove(this->conf.db_path, err))
-			{
-				std::cout << err.message() << std::endl;
-				EXCEPTION(err.message());
-			}
-		}
-		this->conf.sync_path = PATH(typed, true);
-		this->conf.save();
+		err = common::error{"please configure the path of sync location"};
 	}
-	root_path = conf.sync_path;
-	if (!common::file_exist(root_path.string().c_str()))
+	else if (!std::filesystem::is_directory(conf.sync_path.string()))
 	{
-		// delete the dbfile
-		if (!std::filesystem::remove(conf.db_path))
-		{
-			EXCEPTION(common::string_format("failed to delete the db file '%s'", conf.db_path.c_str()));
-		}
-		// change the curremt commit id to empty
-		conf.commit_id = std::string();
-		conf.save();
-		// create the root directory
-		if (!std::filesystem::create_directory(root_path.string()))
-		{
-			EXCEPTION(common::string_format("failed to create directory '%s'", root_path.string().c_str()));
-		}
+		err = common::error{common::string_format("not found the path or it is not a directory:%s", conf.sync_path.string().c_str())};
 	}
 	assert(this->monitor == NULL);
 #ifdef __linux__
@@ -981,13 +955,20 @@ start:
 	common::print_info(common::string_format("watch root directory:%s", root_path.string().c_str()));
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
+
+	// whatever is wrong, should delete the config file.
+	if (err)
+	{
+		conf.deleteFile();
+	}
+	return err;
 }
 bool filesync::FileSync::get_file_changes()
 {
 start:
 	common::print_info("checking server changes");
 	std::string url_path = common::string_format("/api/commit/changes?commit_id=%s", this->conf.commit_id.c_str());
-	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token()};
+	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(account)};
 	c.GET();
 	if (c.error)
 	{
@@ -1124,7 +1105,7 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(std::string re
 {
 	return std::filesystem::path(this->server_location) / relative_path;
 }
-std::string filesync::FileSync::get_token()
+std::string filesync::get_token(std::string account)
 {
 #ifdef __linux__
 

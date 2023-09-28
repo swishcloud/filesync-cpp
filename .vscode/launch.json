@@ -40,6 +40,7 @@
             "args": [
                 "sync",
                 "--account=axiao",
+                "--fa=false"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

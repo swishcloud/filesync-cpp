@@ -2,7 +2,7 @@
 // or project specific include files.
 #ifndef FILESYNC
 #define FILESYNC
-//#pragma once
+// #pragma once
 
 #include <iostream>
 #include <filesystem>
@@ -37,6 +37,7 @@ namespace filesync
 	class tcp_client;
 	struct File;
 	class ServerFile;
+	struct FSConnectResult;
 	// CMD STRUCTURE
 	struct CMD_EXPORT_OPTION
 	{
@@ -63,6 +64,7 @@ namespace filesync
 		size_t size;
 	};
 	int run(int argc, const char *argv[]);
+	std::string get_token(std::string account);
 } // namespace filesync
 class filesync::FileSync
 {
@@ -114,15 +116,15 @@ public:
 	ChangeCommitter *committer;
 	FileSync(char *server_location, CONFIG cfg);
 	~FileSync();
-	void connect();
+	FSConnectResult connect(std::string serverip, std::string port);
 	bool upload_file(std::shared_ptr<std::istream> fs, const char *md5, long size, std::string token);
 	common::error download_file(std::string server_path, std::string commit_id, std::string save_path);
 	std::vector<File> get_server_files(std::string path, std::string commit_id, std::string max_commit_id, bool *ok);
 	std::string get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback);
-	bool get_all_server_files(bool force_getting_all);
+	bool get_all_server_files(int times);
 	std::vector<filesync::File> files;
 	std::unordered_map<const char *, int, hasher, keyeq> files_map;
-	void check_sync_path();
+	common::error check_sync_path();
 	bool get_file_changes();
 	void save_change(json change, const char *commit_id);
 	void print();
@@ -137,7 +139,6 @@ public:
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
 	bool monitor_path(PATH path);
-	std::string get_token();
 };
 struct filesync::File
 {
@@ -160,5 +161,12 @@ public:
 	std::size_t size;
 	std::string commit_id;
 	std::string path;
+};
+class filesync::FSConnectResult
+{
+public:
+	std::string max_commit_id;
+	std::string first_commit_id;
+	std::string partition_id;
 };
 #endif

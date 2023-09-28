@@ -1,103 +1,7 @@
 #include "filesync.h"
 #include "CLI11.hpp"
+#include "cmd.h"
 int exit_code = -1;
-void begin_sync(std::string account, bool get_all_server_files)
-{
-    common::print_info("login account:" + account);
-    if (get_all_server_files)
-    {
-        common::print_info("will begin getting all server files in 3 seconds.Be patient...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 3));
-    }
-    filesync::CONFIG cfg;
-    auto err = cfg.load();
-    if (err)
-    {
-        filesync::print_info(err.message());
-        return;
-    }
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
-    filesync->account = account;
-    try
-    {
-        filesync->connect();
-        filesync->check_sync_path();
-        std::error_code ec;
-        if (get_all_server_files && !std::filesystem::remove(filesync->conf.db_path.c_str(), ec))
-        {
-            delete filesync;
-            common::print_info(ec.message());
-            return;
-        }
-        filesync->db.init(filesync->conf.db_path.c_str());
-        while (!filesync->get_all_server_files(get_all_server_files))
-            ;
-        get_all_server_files = true;
-        bool process_monitor = false;
-        while (1)
-        {
-            if (!filesync->get_file_changes())
-            {
-                continue;
-            }
-            if (!filesync->sync_server())
-            {
-                continue;
-            }
-
-            bool procoss_monitor_failed = false;
-            if (process_monitor)
-            {
-                while (auto local_change = filesync->get_local_file_change())
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    local_change->path;
-                    std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
-
-                    if (!filesync->sync_local_added_or_modified(local_change->path.c_str()))
-                    {
-                        procoss_monitor_failed = true;
-                    }
-                    if (!filesync->sync_local_deleted(local_change->path.c_str()))
-                    {
-                        procoss_monitor_failed = true;
-                    }
-                    delete local_change;
-                }
-            }
-            else
-            {
-                if (!filesync->sync_local_added_or_modified(filesync->conf.sync_path.string().c_str()))
-                {
-                    continue;
-                }
-                if (!filesync->sync_local_deleted(NULL))
-                {
-                    continue;
-                }
-                process_monitor = true;
-                filesync::print_info("begin processing  monitor...");
-            }
-            if (!procoss_monitor_failed)
-            {
-                if (!filesync->committer->commit())
-                    process_monitor = false;
-            }
-            else
-            {
-
-                process_monitor = false;
-                filesync->committer->clear();
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        }
-    }
-    catch (const std::exception &ex)
-    {
-        common::print_info(ex.what());
-    }
-    delete (filesync);
-}
 void begin_listen(std::string listen_port, std::string files_path)
 {
     filesync::CONFIG cfg;
@@ -149,7 +53,7 @@ void begin_export(filesync::PATH path, std::string commit_id, std::string max_co
     }
     filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
     filesync->account = account;
-    filesync->connect();
+    filesync->connect(cfg.server_ip, common::string_format("%d", cfg.server_tcp_port));
     std::string first_server_path = path.string();
     std::string export_directory_path = destination_folder.string();
     export_directory_path = (std::filesystem::path{export_directory_path} / common::get_file_name(first_server_path)).string();
@@ -348,7 +252,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
         common::print_info("required a account parameter or a token parameter, and only one of both.");
         return;
     }
-    auto token = opt.token.empty() ? filesync->get_token() : opt.token;
+    auto token = opt.token.empty() ? filesync::get_token(filesync->account) : opt.token;
     bool upload_ok = filesync->upload_file(fs, opt.md5.c_str(), opt.size, token);
     if (upload_ok)
     {
@@ -407,13 +311,6 @@ int filesync::run(int argc, const char *argv[])
 {
     setlocale(LC_ALL, "zh_CN.UTF-8");
     CLI::App app("filesync tool");
-    auto sync = app.add_subcommand("sync", "syncing everything");
-    std::string account;
-    bool fa = false;
-    sync->add_option("--account", account, "your account name")->required();
-    sync->add_option("--fa", fa, "force looking up all server files.this option is recommended for some unusual circumstance.");
-    sync->callback([&account, &fa]()
-                   { begin_sync(account, fa); });
     std::string listen_port, files_path;
 
     auto listen = app.add_subcommand("listen", "listen as a server node");
@@ -425,6 +322,8 @@ int filesync::run(int argc, const char *argv[])
     CMD_REPORT(&app);
     CMD_SERVER_CLEAN(&app);
     CMD_UPLOAD(&app);
+    (new LoginCMD())->reg(&app);
+    (new SyncCMD())->reg(&app);
     CLI11_PARSE(app, argc, argv);
     return exit_code;
 }

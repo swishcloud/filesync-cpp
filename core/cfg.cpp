@@ -79,15 +79,26 @@ std::string filesync::CONFIG::path()
 	return path.string();
 }
 
-void filesync::PartitionConf::init(bool debug_mode)
+filesync::PartitionConf filesync::PartitionConf::create(bool debug_mode, std::string partition_id, bool reuse)
 {
 	std::string partition_folder_name = common::string_format("partition_%s%s", debug_mode ? "debug_" : "", partition_id.c_str());
 	auto folder_path = std::filesystem::path(datapath).append(partition_folder_name);
 	std::filesystem::create_directories(folder_path);
-
-	this->db_path = std::filesystem::path(folder_path).append("filesync.db").u8string();
-	this->partition_cfg_path = std::filesystem::path(folder_path).append("cfg").u8string();
-
+	PartitionConf conf;
+	conf.db_path = std::filesystem::path(folder_path).append("filesync.db").u8string();
+	conf.partition_cfg_path = std::filesystem::path(folder_path).append("cfg").u8string();
+	// if resue is false delete the file
+	if (!reuse && !std::filesystem::remove(conf.partition_cfg_path))
+	{
+		std::string err = common::string_format("Failed to delete file ''", conf.partition_cfg_path.c_str());
+		common::print_info(err);
+		EXCEPTION(err);
+	}
+	conf.load();
+	return conf;
+}
+void filesync::PartitionConf::load()
+{
 	// read cofigurations from partition_cfg_path
 	std::ifstream in(partition_cfg_path);
 	if (in.is_open())
@@ -125,6 +136,13 @@ void filesync::PartitionConf::save()
 	}
 	out << j;
 	out.close();
+}
+void filesync::PartitionConf::deleteFile()
+{
+	if (!std::filesystem::remove(db_path))
+	{
+		filesync::throw_exception(common::string_format("Failed to delete the db file %s", db_path.c_str()));
+	}
 }
 std::string filesync::PartitionConf::get_tmp_dir(std::error_code &ec)
 {

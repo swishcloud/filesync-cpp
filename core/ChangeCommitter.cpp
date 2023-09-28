@@ -58,7 +58,7 @@ bool filesync::ChangeCommitter::commit(std::string token)
 	bool ok = false;
 	if (this->actions.size() > 0)
 	{
-		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token != std::string{} ? token : fs.get_token()};
+		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token != std::string{} ? token : filesync::get_token(fs.account)};
 		c.POST(post_data);
 		if (c.error)
 		{
