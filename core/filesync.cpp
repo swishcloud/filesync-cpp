@@ -952,7 +952,6 @@ common::error filesync::FileSync::check_sync_path()
 #else
 	this->monitor = new common::monitor::win_monitor(this->conf.sync_path.string());
 #endif
-	common::print_info(common::string_format("watch root directory:%s", root_path.string().c_str()));
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
 
