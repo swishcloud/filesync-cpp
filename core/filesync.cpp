@@ -965,6 +965,7 @@ start:
 		}
 		// change the curremt commit id to empty
 		conf.commit_id = std::string();
+		conf.save();
 		// create the root directory
 		if (!std::filesystem::create_directory(root_path.string()))
 		{
