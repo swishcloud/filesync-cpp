@@ -400,13 +400,14 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 		}
 		if (local_md5 && !std::filesystem::exists(full_path))
 		{ // this file has been deleted locally.
+			common::print_info(common::string_format("DELETE:%s", full_path));
 			delete_by_path_action *action = new delete_by_path_action();
 			action->commit_id = common::strcpy(commit_id);
 			action->file_type = is_directory ? 2 : 1;
 			action->path = common::strcpy(file_name);
 			this->committer->add_action(action);
 		}
-		delete[](full_path);
+		delete[] (full_path);
 	}
 	return true;
 }
@@ -955,12 +956,28 @@ start:
 		this->conf.save();
 	}
 	root_path = conf.sync_path;
+	if (!common::file_exist(root_path.string().c_str()))
+	{
+		// delete the dbfile
+		if (!std::filesystem::remove(conf.db_path))
+		{
+			EXCEPTION(common::string_format("failed to delete the db file '%s'", conf.db_path.c_str()));
+		}
+		// change the curremt commit id to empty
+		conf.commit_id = std::string();
+		// create the root directory
+		if (!std::filesystem::create_directory(root_path.string()))
+		{
+			EXCEPTION(common::string_format("failed to create directory '%s'", root_path.string().c_str()));
+		}
+	}
 	assert(this->monitor == NULL);
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
 #else
 	this->monitor = new common::monitor::win_monitor(this->conf.sync_path.string());
 #endif
+	common::print_info(common::string_format("watch root directory:%s", root_path.string().c_str()));
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
 }
@@ -1027,7 +1044,7 @@ filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 filesync::FileSync::~FileSync()
 {
 	delete (this->committer);
-	delete[](this->server_location);
+	delete[] (this->server_location);
 	delete (this->monitor);
 	delete this->_tcp_client;
 
@@ -1037,7 +1054,7 @@ filesync::FileSync::~FileSync()
 
 	for (auto i : this->files_map)
 	{
-		delete[](i.first);
+		delete[] (i.first);
 	}
 
 	while (auto local_change = this->get_local_file_change())
@@ -1069,7 +1086,7 @@ std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *c_pat
 	}
 	else
 	{
-		delete[](buf);
+		delete[] (buf);
 		return std::string{};
 	}
 }
@@ -1094,7 +1111,7 @@ char *filesync::FileSync::get_relative_path(const char *server_path)
 	char *result = common::strcpy(r);
 	if (result[0] == '\0')
 	{
-		delete[](result);
+		delete[] (result);
 		return common::strcpy("/");
 	}
 	else

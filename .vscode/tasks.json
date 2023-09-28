@@ -3,7 +3,7 @@
         {
             "type": "cppbuild",
             "label": "C/C++: g++ build active file",
-            "command": "cmake",
+            "command": "/opt/cmake-3.27.6-linux-x86_64/bin/cmake",
             "args": [
                 "--build",
                 "build",
