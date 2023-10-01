@@ -26,7 +26,7 @@ namespace filesync
 
 	public:
 		create_file_action();
-		//create_file_action(create_file_action &&action);
+		// create_file_action(create_file_action &&action);
 		~create_file_action();
 
 		json to_json() override;
@@ -38,7 +38,7 @@ namespace filesync
 
 	public:
 		create_directory_action();
-		//create_directory_action(create_directory_action &&action);
+		// create_directory_action(create_directory_action &&action);
 		~create_directory_action();
 		json to_json() override;
 	};
@@ -50,7 +50,7 @@ namespace filesync
 
 	public:
 		delete_by_path_action();
-		//delete_by_path_action(delete_by_path_action &&action);
+		// delete_by_path_action(delete_by_path_action &&action);
 		~delete_by_path_action();
 		json to_json() override;
 	};

@@ -26,6 +26,21 @@ filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, acti
 			throw common::exception("commiting changes failed.");
 		}
 	}
+
+	// if it's a file, make sure that the parent directory will be created if it doesn't not exist
+	if (action->type == 1)
+	{
+		std::smatch m;
+		std::regex re{".+(?=/)"};
+		std::string source = path.string();
+		if (std::regex_search(source, m, re))
+		{
+			filesync::create_directory_action *pAction = new filesync::create_directory_action();
+			pAction->is_hidden = false;
+			pAction->path = common::strcpy(m.str().c_str());
+			return add_action(PATH(m.str()), pAction);
+		}
+	}
 	return this;
 }
 void filesync::ChangeCommitter::clear()
