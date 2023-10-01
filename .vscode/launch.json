@@ -39,12 +39,17 @@
             "program": "${workspaceFolder}/build/filesync/filesync",
             "args": [
                 "sync",
-                "--account=axiao",
-                "--fa=false"
+                "--account=test",
+                "run"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {
+                    "name": "development",
+                    "value": "true"
+                }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [

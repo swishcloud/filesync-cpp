@@ -139,7 +139,7 @@ void filesync::PartitionConf::save()
 }
 void filesync::PartitionConf::deleteFile()
 {
-	if (!std::filesystem::remove(db_path))
+	if (std::filesystem::exists(db_path) && !std::filesystem::remove(db_path))
 	{
 		filesync::throw_exception(common::string_format("Failed to delete the db file %s", db_path.c_str()));
 	}

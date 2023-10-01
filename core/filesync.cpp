@@ -946,6 +946,12 @@ common::error filesync::FileSync::check_sync_path()
 	{
 		err = common::error{common::string_format("not found the path or it is not a directory:%s", conf.sync_path.string().c_str())};
 	}
+	// whatever is wrong, should delete the config file.
+	if (err)
+	{
+		conf.deleteFile();
+		return err;
+	}
 	assert(this->monitor == NULL);
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
@@ -954,12 +960,6 @@ common::error filesync::FileSync::check_sync_path()
 #endif
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
-
-	// whatever is wrong, should delete the config file.
-	if (err)
-	{
-		conf.deleteFile();
-	}
 	return err;
 }
 bool filesync::FileSync::get_file_changes()

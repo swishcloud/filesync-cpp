@@ -13,7 +13,7 @@ void SyncCMD::reg(CLI::App *parent)
 
 void SyncCMD::callback()
 {
-    filesync::throw_exception("this callback should not be called");
+    common::print_debug("CMD END");
 }
 void SyncCMD::addRunCmd(CLI::App *parent)
 {
@@ -38,7 +38,10 @@ void SyncCMD::addRunCmd(CLI::App *parent)
         filesync::FSConnectResult connect_res = filesync->connect(cfg.server_ip, common::string_format("%d", cfg.server_tcp_port));
         // configuration
         filesync::PartitionConf conf = filesync::PartitionConf::create(cfg.debug_mode, connect_res.partition_id, true);
-        conf.commit_id = connect_res.first_commit_id;
+        if(conf.commit_id.empty())
+        {
+            conf.commit_id = connect_res.first_commit_id;
+        }
         conf.max_commit_id = connect_res.max_commit_id;
         filesync->conf = conf;
 
