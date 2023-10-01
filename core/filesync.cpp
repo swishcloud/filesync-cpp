@@ -81,7 +81,7 @@ void filesync::FileSync::on_file_uploaded(PATH full_path, std::string md5)
 	action->location = common::strcpy(get_parent_dir(relative_path.c_str()).c_str());
 	action->md5 = common::strcpy(md5.c_str());
 	action->name = file_name(relative_path.c_str());
-	this->committer->add_action(action);
+	this->committer->add_action(PATH(relative_path), action);
 }
 std::string filesync::FileSync::get_server_files(std::string path, std::string commit_id, std::string max_commit_id, std::function<void(ServerFile &file)> callback)
 {
@@ -311,7 +311,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 				filesync::create_directory_action *action = new filesync::create_directory_action();
 				action->is_hidden = false;
 				action->path = common::strcpy(relative_path.c_str());
-				this->committer->add_action(action);
+				this->committer->add_action(filesync::PATH(relative_path), action);
 			}
 		}
 		else
@@ -407,7 +407,7 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 			action->commit_id = common::strcpy(commit_id);
 			action->file_type = is_directory ? 2 : 1;
 			action->path = common::strcpy(file_name);
-			this->committer->add_action(action);
+			this->committer->add_action(filesync::PATH(relative_path), action);
 		}
 		delete[] (full_path);
 	}

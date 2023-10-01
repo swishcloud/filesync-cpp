@@ -11,7 +11,7 @@ find_package(nlohmann_json 3.2.0 REQUIRED)
 add_compile_definitions("WIN32_LEAN_AND_MEAN")
 # Add source to this project's executable.
 add_library(common::common ALIAS COMMON::COMMON)
-add_library(${CORE_TARGET_NAME} "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp" "cmd.cpp" "cmd/LoginCMD.cpp" "cmd/SyncCMD.cpp")
+add_library(${CORE_TARGET_NAME} "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp" "cmd.cpp" "cmd/LoginCMD.cpp" "cmd/SyncCMD.cpp" "file.cpp")
 if (MSVC)
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>" "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
     set(CMAKE_EXE_LINKER_FLAGS "")

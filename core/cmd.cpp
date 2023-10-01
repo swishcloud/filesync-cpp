@@ -261,7 +261,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
         action->location = common::strcpy(opt.location.string().c_str());
         action->md5 = common::strcpy(opt.md5.c_str());
         action->name = common::strcpy(opt.filename.c_str());
-        filesync->committer->add_action(action);
+        filesync->committer->add_action(filesync::PATH(opt.location.string()), action);
         if (filesync->committer->commit(token))
         {
             common::print_info("Finished.");
