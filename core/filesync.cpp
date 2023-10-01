@@ -15,7 +15,6 @@ using namespace nlohmann;
 namespace po = boost::program_options;
 namespace filesync
 {
-	PATH root_path;
 	std::string get_parent_dir(const char *filename)
 	{
 		std::cmatch m{};
@@ -288,7 +287,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 	auto file_db = db.get_file(relative_path.c_str());
 
 	// check if the path is need to be synced
-	if (!this->monitor_path(relative_path) && relative_path != "/")
+	if (!this->monitor_path(relative_path) || relative_path == "/")
 	{
 		common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
 		return true;
@@ -1051,13 +1050,13 @@ void filesync::FileSync::corret_path_sepatator(char *path)
 std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *c_path)
 {
 	PATH path = std::string(c_path);
-	size_t len = root_path.string().size(), result_path_len = path.string().size() - len;
+	size_t len = conf.sync_path.size(), result_path_len = path.string().size() - len;
 	if (result_path_len == 0)
 	{
 		return "/";
 	}
 	char *buf = new char[result_path_len + 1];
-	if (memcmp(path.string().c_str(), root_path.string().c_str(), len) == 0)
+	if (memcmp(path.string().c_str(), conf.sync_path.string().c_str(), len) == 0)
 	{
 		memcpy(buf, path.string().c_str() + len, result_path_len);
 		buf[result_path_len] = '\0';
@@ -1074,11 +1073,11 @@ std::string filesync::FileSync::get_relative_path_by_fulllpath(const char *c_pat
 char *filesync::FileSync::get_full_path(const char *path)
 {
 	if (std::string(path) == "/")
-		return common::strcpy(root_path.string().c_str());
-	int size = root_path.string().size() + strlen(path);
+		return common::strcpy(conf.sync_path.string().c_str());
+	int size = conf.sync_path.string().size() + strlen(path);
 	char *full_path = new char[size + 1];
-	memcpy(full_path, root_path.string().c_str(), root_path.string().size());
-	memcpy(full_path + root_path.string().size(), path, strlen(path));
+	memcpy(full_path, conf.sync_path.string().c_str(), conf.sync_path.string().size());
+	memcpy(full_path + conf.sync_path.string().size(), path, strlen(path));
 	full_path[size] = '\0';
 	return full_path;
 }
