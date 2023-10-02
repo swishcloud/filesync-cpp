@@ -56,23 +56,19 @@ bool filesync::ChangeCommitter::commit(std::string token)
 	json j_delete_arr = json::array();
 	for (auto &node : this->actionTreeRoot->GetAllChildren())
 	{
-		common::print_debug(common::string_format("PATH '%s':", node->path.string().c_str()));
 		for (auto &action : node->actions)
 		{
 			if (action->type == 1)
 			{
 				j_file_arr.push_back(action->to_json());
-				common::print_debug("file_actions");
 			}
 			else if (action->type == 2)
 			{
 				j_directories_arr.push_back(action->to_json());
-				common::print_debug("directory_actions");
 			}
 			else if (action->type == 3)
 			{
 				j_delete_arr.push_back(action->to_json());
-				common::print_debug("delete_by_path_actions");
 			}
 			else
 			{
@@ -88,6 +84,7 @@ bool filesync::ChangeCommitter::commit(std::string token)
 	bool ok = false;
 	if (this->actionTreeRoot->Size() > 0)
 	{
+		this->Dump();
 		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token != std::string{} ? token : filesync::get_token(fs.account)};
 		c.POST(post_data);
 		if (c.error)
@@ -112,6 +109,31 @@ bool filesync::ChangeCommitter::commit(std::string token)
 
 	this->actionTreeRoot->Free();
 	return ok;
+}
+void filesync::ChangeCommitter::Dump()
+{
+	std::string dump = this->actionTreeRoot->Dump();
+	auto dir = std::filesystem::path(this->fs.conf.partition_path).append("log");
+	if (!std::filesystem::exists(dir))
+	{
+		std::error_code ec;
+		if (!std::filesystem::create_directories(dir, ec))
+		{
+			common::print_info(common::string_format("failed to create directory '%s':%s", dir.string().c_str(), ec.message().c_str()));
+			return;
+		}
+	}
+	auto path = dir.append(common::currentDateTime());
+	std::ofstream out(path);
+	if (!out)
+	{
+		common::print_info(common::string_format("failed to create file '%s'", path.string().c_str()));
+	}
+	else
+	{
+		out << dump;
+	}
+	out.close();
 }
 filesync::PathNode::PathNode()
 {
@@ -217,4 +239,20 @@ void filesync::PathNode::Free()
 		i = --this->children.erase(i);
 		root->size--;
 	}
+}
+std::string filesync::PathNode::Dump()
+{
+	std::string log;
+	log += common::string_format("%s:\r\n", this->path.string().c_str());
+	for (auto &action : this->actions)
+	{
+		auto className = typeid((*action.get())).name();
+		log += common::string_format("\t%s\r\n", className);
+	}
+
+	for (auto &child : this->children)
+	{
+		log += child->Dump();
+	}
+	return log;
 }

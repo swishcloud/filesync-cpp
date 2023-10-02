@@ -32,6 +32,7 @@ namespace filesync
 		int Size();
 		std::vector<PathNode *> GetAllChildren();
 		void Free();
+		std::string Dump();
 	};
 
 	class ChangeCommitter
@@ -46,6 +47,7 @@ namespace filesync
 		ChangeCommitter *add_action(PATH path, action_base *action);
 		void clear();
 		bool commit(std::string token = std::string{});
+		void Dump();
 	};
 } // namespace filesync
 #endif

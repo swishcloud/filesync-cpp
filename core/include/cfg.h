@@ -39,6 +39,7 @@ namespace filesync
 		std::string first_commit_id;
 		std::string partition_id;
 		std::string commit_id;
+		std::string partition_path;
 		std::string db_path;
 		std::string partition_cfg_path;
 		PATH sync_path;

@@ -15,18 +15,19 @@ BOOST_AUTO_TEST_CASE(PathNode_Test)
     filesync::PathNode root;
     root.root = &root;
     root.path = filesync::PATH("/");
-    root.AddAction(filesync::PATH("/1"), NULL);
-    root.AddAction(filesync::PATH("/2"), NULL);
-    root.AddAction(filesync::PATH("/3"), NULL);
-    root.AddAction(filesync::PATH("/1/2/4"), NULL);
-    root.AddAction(filesync::PATH("/4"), NULL);
+    root.AddAction(filesync::PATH("/1"), new filesync::create_file_action{});
+    root.AddAction(filesync::PATH("/2"), new filesync::create_file_action{});
+    root.AddAction(filesync::PATH("/3"), new filesync::create_file_action{});
+    root.AddAction(filesync::PATH("/1/2/4"), new filesync::create_file_action{});
+    root.AddAction(filesync::PATH("/4"), new filesync::create_file_action{});
     root.Print();
-    root.AddAction(filesync::PATH("/1/2"), NULL);
+    root.AddAction(filesync::PATH("/1/2"), new filesync::create_file_action{});
     common::print_debug("inserted /1/2");
     root.Print();
     BOOST_ASSERT(root.Size() > 0);
+    std::string dump = root.Dump();
+    common::print_info(dump);
     root.Free();
     BOOST_ASSERT(root.Size() == 0);
-
     // common::print_debug(common::string_format("found path:%s", found->path.string().c_str()));
 }

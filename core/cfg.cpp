@@ -82,11 +82,11 @@ std::string filesync::CONFIG::path()
 filesync::PartitionConf filesync::PartitionConf::create(bool debug_mode, std::string partition_id, bool reuse)
 {
 	std::string partition_folder_name = common::string_format("partition_%s%s", debug_mode ? "debug_" : "", partition_id.c_str());
-	auto folder_path = std::filesystem::path(datapath).append(partition_folder_name);
-	std::filesystem::create_directories(folder_path);
 	PartitionConf conf;
-	conf.db_path = std::filesystem::path(folder_path).append("filesync.db").u8string();
-	conf.partition_cfg_path = std::filesystem::path(folder_path).append("cfg").u8string();
+	conf.partition_path = std::filesystem::path(datapath).append(partition_folder_name);
+	std::filesystem::create_directories(conf.partition_path);
+	conf.db_path = std::filesystem::path(conf.partition_path).append("filesync.db").u8string();
+	conf.partition_cfg_path = std::filesystem::path(conf.partition_path).append("cfg").u8string();
 	// if resue is false delete the file
 	if (!reuse && !std::filesystem::remove(conf.partition_cfg_path))
 	{
