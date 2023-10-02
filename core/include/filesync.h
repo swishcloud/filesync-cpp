@@ -64,7 +64,6 @@ namespace filesync
 		size_t size;
 	};
 	int run(int argc, const char *argv[]);
-	std::string get_token(std::string account);
 } // namespace filesync
 class filesync::FileSync
 {
@@ -139,6 +138,7 @@ public:
 	filesync::tcp_client *get_tcp_client();
 	void destroy_tcp_client();
 	bool monitor_path(PATH path);
+	std::string get_token(std::string account);
 };
 struct filesync::File
 {

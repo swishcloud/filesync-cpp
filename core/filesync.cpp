@@ -1103,13 +1103,18 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(std::string re
 {
 	return std::filesystem::path(this->server_location) / relative_path;
 }
-std::string filesync::get_token(std::string account)
+std::string filesync::FileSync::get_token(std::string account)
 {
 #ifdef __linux__
 
 #endif
 	auto token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", account.c_str())).string();
-	system(common::string_format("filesync-go login --insecure --token_path \"%s\"", token_file_path.c_str()).c_str());
+	auto cmd = common::string_format("filesync-go login --insecure --token_path \"%s\"", token_file_path.c_str());
+	if (this->cfg.debug_mode)
+	{
+		cmd = "development=true " + cmd;
+	}
+	system(cmd.c_str());
 	std::ifstream in(token_file_path);
 	std::string ss{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
 	std::regex regex("accesstoken: (.+)");

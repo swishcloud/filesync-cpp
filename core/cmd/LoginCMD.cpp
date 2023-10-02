@@ -10,7 +10,15 @@ void LoginCMD::reg(CLI::App *parent)
 }
 void LoginCMD::callback()
 {
-    std::string token = filesync::get_token(account);
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
+    std::string token = filesync->get_token(account);
     if (!token.empty())
     {
         common::print_info("login success");
@@ -19,4 +27,5 @@ void LoginCMD::callback()
     {
         common::print_info("login failed");
     }
+    delete filesync;
 }

@@ -252,7 +252,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
         common::print_info("required a account parameter or a token parameter, and only one of both.");
         return;
     }
-    auto token = opt.token.empty() ? filesync::get_token(filesync->account) : opt.token;
+    auto token = opt.token.empty() ? filesync->get_token(filesync->account) : opt.token;
     bool upload_ok = filesync->upload_file(fs, opt.md5.c_str(), opt.size, token);
     if (upload_ok)
     {
@@ -322,8 +322,13 @@ int filesync::run(int argc, const char *argv[])
     CMD_REPORT(&app);
     CMD_SERVER_CLEAN(&app);
     CMD_UPLOAD(&app);
-    (new LoginCMD())->reg(&app);
-    (new SyncCMD())->reg(&app);
+    std::vector<std::unique_ptr<CMDBase>> cmds;
+    cmds.push_back(std::unique_ptr<CMDBase>{new LoginCMD()});
+    cmds.push_back(std::unique_ptr<CMDBase>{new SyncCMD()});
+    for (auto &cmd : cmds)
+    {
+        cmd->reg(&app);
+    }
     CLI11_PARSE(app, argc, argv);
     return exit_code;
 }
