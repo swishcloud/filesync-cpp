@@ -16,16 +16,6 @@ filesync::ChangeCommitter::~ChangeCommitter()
 filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, action_base *action)
 {
 	const int MAX_ACTION_LIMIT = 50;
-	// this->actions.push_back(std::unique_ptr<action_base>{action});
-	this->actionTreeRoot->AddAction(path, action);
-	filesync::print_info(common::string_format("pending %d/%d actions", this->actionTreeRoot->Size(), MAX_ACTION_LIMIT));
-	if (this->actionTreeRoot->Size() == MAX_ACTION_LIMIT)
-	{
-		if (!this->commit())
-		{
-			throw common::exception("commiting changes failed.");
-		}
-	}
 
 	// if it's a file, make sure that the parent directory will be created if it doesn't not exist
 	if (action->type == 1)
@@ -38,7 +28,19 @@ filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, acti
 			filesync::create_directory_action *pAction = new filesync::create_directory_action();
 			pAction->is_hidden = false;
 			pAction->path = common::strcpy(m.str().c_str());
-			return add_action(PATH(m.str()), pAction);
+			add_action(PATH(m.str()), pAction);
+		}
+	}
+
+	this->actionTreeRoot->AddAction(path, action);
+	filesync::print_info(common::string_format("pending %d/%d actions", this->actionTreeRoot->Size(), MAX_ACTION_LIMIT));
+
+	if (this->actionTreeRoot->Size() == MAX_ACTION_LIMIT)
+	{
+		if (!this->commit())
+		{
+			delete action;
+			throw common::exception("commiting changes failed.");
 		}
 	}
 	return this;
