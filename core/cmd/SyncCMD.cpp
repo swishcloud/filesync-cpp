@@ -74,14 +74,12 @@ void SyncCMD::addRunCmd(CLI::App *parent)
                 while (auto local_change = filesync->get_local_file_change())
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    local_change->path;
-                    std::replace(local_change->path.begin(), local_change->path.end(), '\\', '/');
-
-                    if (!filesync->sync_local_added_or_modified(local_change->path.c_str()))
+                    auto changedPath = filesync::PATH(local_change->path,true);
+                    if (!filesync->sync_local_added_or_modified(changedPath.string().c_str()))
                     {
                         procoss_monitor_failed = true;
                     }
-                    if (!filesync->sync_local_deleted(local_change->path.c_str()))
+                    if (!filesync->sync_local_deleted(changedPath.string().c_str()))
                     {
                         procoss_monitor_failed = true;
                     }
