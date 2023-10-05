@@ -287,7 +287,7 @@ bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 	auto file_db = db.get_file(relative_path.c_str());
 
 	// check if the path is need to be synced
-	if (!this->monitor_path(relative_path) || relative_path == "/")
+	if (!this->monitor_path(relative_path))
 	{
 		common::print_debug(common::string_format("sync_local_added_or_modified->Skip Non-monitored path:%s", relative_path.c_str()));
 		return true;
@@ -945,11 +945,17 @@ common::error filesync::FileSync::check_sync_path()
 	{
 		err = common::error{common::string_format("not found the path or it is not a directory:%s", conf.sync_path.string().c_str())};
 	}
-	// whatever is wrong, should delete the config file.
+	// whatever is wrong, should delete the db file.
 	if (err)
 	{
 		conf.deleteFile();
 		return err;
+	}
+	// If the db file does not exist, the commit id shoud be empty in partition config file.
+	if (!std::filesystem::exists(conf.db_path))
+	{
+		conf.commit_id = "";
+		conf.save();
 	}
 	assert(this->monitor == NULL);
 #ifdef __linux__

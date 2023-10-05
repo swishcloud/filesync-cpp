@@ -95,6 +95,7 @@ filesync::PartitionConf filesync::PartitionConf::create(bool debug_mode, std::st
 		EXCEPTION(err);
 	}
 	conf.load();
+	conf.monitor_paths.push_back(std::string("/"));
 	return conf;
 }
 void filesync::PartitionConf::load()

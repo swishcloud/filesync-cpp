@@ -42,6 +42,7 @@ void SyncCMD::addRunCmd(CLI::App *parent)
         {
             conf.commit_id = connect_res.first_commit_id;
         }
+        conf.first_commit_id = connect_res.first_commit_id;
         conf.max_commit_id = connect_res.max_commit_id;
         filesync->conf = conf;
 
