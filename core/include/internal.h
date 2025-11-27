@@ -12,6 +12,7 @@
 using namespace nlohmann;
 namespace filesync
 {
+    extern std::mutex print_mtx;
     struct PATH
     {
     private:
@@ -20,7 +21,7 @@ namespace filesync
     public:
         std::string string();
         size_t size();
-        PATH(){};
+        PATH() {};
         PATH(std::string str, bool trimEnd = false);
     };
     inline const char *DIRECTORY_MD5 = R"(00000000000000000000000000000000)";

@@ -185,7 +185,7 @@ bool filesync::FileSync::sync_server()
 		return true;
 	}
 	std::vector<std::string> errs;
-	auto u_files = this->db.get_files();
+	auto u_files = this->db->get_files();
 	auto files = u_files.get();
 	for (int i = 0; i < files->count; i++)
 	{
@@ -207,7 +207,7 @@ bool filesync::FileSync::sync_server()
 		if (!this->monitor_path(f.server_path))
 		{
 			common::print_debug(common::string_format("clearing Non-monitored path in db:%s", f.server_path.c_str()));
-			this->db.delete_file_hard(f.server_path.c_str());
+			this->db->delete_file_hard(f.server_path.c_str());
 			continue;
 		}
 		// check if server has delete the file, if yes then delete the file locally, and hard delete the file from db
@@ -223,7 +223,7 @@ bool filesync::FileSync::sync_server()
 			}
 			else
 			{
-				this->db.delete_file_hard(file_name);
+				this->db->delete_file_hard(file_name);
 			}
 			continue;
 		}
@@ -240,7 +240,7 @@ bool filesync::FileSync::sync_server()
 				}
 				if (!std::filesystem::exists(full_path.get()))
 					assert(std::filesystem::create_directories(f.full_path));
-				this->db.update_local_md5(f.server_path.c_str(), DIRECTORY_MD5);
+				this->db->update_local_md5(f.server_path.c_str(), DIRECTORY_MD5);
 			}
 		}
 		else
@@ -259,7 +259,7 @@ bool filesync::FileSync::sync_server()
 				}
 				if (has_downloaded)
 				{
-					this->db.update_local_md5(f.server_path.c_str(), md5);
+					this->db->update_local_md5(f.server_path.c_str(), md5);
 				}
 				else
 				{
@@ -272,7 +272,7 @@ bool filesync::FileSync::sync_server()
 					}
 					else
 					{
-						this->db.update_local_md5(f.server_path.c_str(), md5);
+						this->db->update_local_md5(f.server_path.c_str(), md5);
 					}
 				}
 			}
@@ -284,7 +284,7 @@ bool filesync::FileSync::sync_server()
 bool filesync::FileSync::sync_local_added_or_modified(const char *path)
 {
 	auto relative_path = this->get_relative_path_by_fulllpath(path);
-	auto file_db = db.get_file(relative_path.c_str());
+	auto file_db = db->get_file(relative_path.c_str());
 
 	// check if the path is need to be synced
 	if (!this->monitor_path(relative_path))
@@ -365,18 +365,18 @@ bool filesync::FileSync::sync_local_deleted(const char *path)
 	std::unique_ptr<filesync::sqlite_query_result> u_files;
 	filesync::sqlite_query_result *files;
 
-	u_files = this->db.get_files();
+	u_files = this->db->get_files();
 	files = u_files.get();
 	// todo: change to the following commented code after fixed the bug that win_monitor can't get exact deleted path in callback
 	/*if (path == NULL)
 	{
-		u_files = this->db.get_files();
+		u_files = this->db->get_files();
 		files = u_files.get();
 	}
 	else
 	{
 		auto relative_path = this->get_relative_path_by_fulllpath(path);
-		u_files = this->db.get_file(relative_path.c_str());
+		u_files = this->db->get_file(relative_path.c_str());
 		files = u_files.get();
 	}*/
 
@@ -421,7 +421,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 	{
 		v = format_path(v);
 		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
-		auto file_db = db.get_file(relative_path.c_str());
+		auto file_db = db->get_file(relative_path.c_str());
 		std::string md5 = common::file_md5(v.c_str());
 		if (file_db.get()->count == 1)
 		{
@@ -429,7 +429,7 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 			const char *local_md5 = file_db.get()->get_value("local_md5");
 			if (compare_md5(md5.c_str(), server_md5))
 			{
-				this->db.update_local_md5(relative_path.c_str(), NULL);
+				this->db->update_local_md5(relative_path.c_str(), NULL);
 				if (!std::filesystem::remove(v.c_str()))
 				{
 					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
@@ -444,12 +444,12 @@ bool filesync::FileSync::clear_synced_files(const char *path)
 	{
 		v = format_path(v);
 		auto relative_path = this->get_relative_path_by_fulllpath(v.c_str());
-		auto file_db = db.get_file(relative_path.c_str());
+		auto file_db = db->get_file(relative_path.c_str());
 		if (file_db.get()->count == 1)
 		{
 			if (std::filesystem::is_empty(v))
 			{
-				this->db.update_local_md5(relative_path.c_str(), NULL);
+				this->db->update_local_md5(relative_path.c_str(), NULL);
 				if (!std::filesystem::remove(v))
 					throw common::exception(common::string_format("Failed to delete file %s", v.c_str()));
 			}
@@ -734,7 +734,7 @@ bool filesync::FileSync::download_file(File &file)
 	auto s_path = data["Path"];
 	auto md5 = data["Md5"];
 	size_t size = data["Size"].get<std::size_t>();
-	auto db_file = this->db.get_file(file.server_path.c_str());
+	auto db_file = this->db->get_file(file.server_path.c_str());
 	assert(db_file.get()->count > 0);
 	bool is_downloaded = false;
 
@@ -817,7 +817,7 @@ bool filesync::FileSync::download_file(File &file)
 	if (is_downloaded)
 	{
 		filesync::print_info(common::string_format("downloaded file:%s", file.full_path.c_str()));
-		this->db.update_local_md5(file.server_path.c_str(), md5.get<std::string>().c_str());
+		this->db->update_local_md5(file.server_path.c_str(), md5.get<std::string>().c_str());
 	}
 	return is_downloaded;
 }w
@@ -865,7 +865,7 @@ std::vector<filesync::File> filesync::FileSync::get_server_files(std::string pat
 			md5 = item["md5"].get<std::string>().c_str();
 		}
 		print_info(common::string_format("server file:%s", f.server_path.c_str()));
-		this->db.add_file(f.server_path.c_str(), md5.c_str(), f.commit_id.c_str());
+		this->db->add_file(f.server_path.c_str(), md5.c_str(), f.commit_id.c_str());
 	}
 	*ok = true;
 	return files;
@@ -879,7 +879,7 @@ bool filesync::FileSync::get_all_server_files(int times)
 	this->need_sync_server = true;
 	if (this->conf.commit_id.empty())
 	{
-		this->db.add_file("/", NULL, this->conf.first_commit_id.c_str());
+		this->db->add_file("/", NULL, this->conf.first_commit_id.c_str());
 		bool ok = false;
 		auto files = this->get_server_files("/", "", this->conf.max_commit_id.c_str(), &ok);
 		this->conf.commit_id = this->conf.max_commit_id;
@@ -914,19 +914,19 @@ void filesync::FileSync::save_change(json change, const char *commit_id)
 	{
 	case 1: // add
 	case 6: // modified
-		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
+		this->db->add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
 	case 2: // delete
-		this->db.delete_file(path.c_str());
+		this->db->delete_file(path.c_str());
 		break;
 	case 3: // move
 	case 4: // rename
-		this->db.move(source_path.c_str(), path.c_str(), commit_id);
+		this->db->move(source_path.c_str(), path.c_str(), commit_id);
 		// need call add_file in case the source_path is not recorded
-		this->db.add_file(path.c_str(), md5.c_str(), commit_id);
+		this->db->add_file(path.c_str(), md5.c_str(), commit_id);
 		break;
 	case 5: // copy
-		this->db.copy(source_path.c_str(), path.c_str(), commit_id);
+		this->db->copy(source_path.c_str(), path.c_str(), commit_id);
 		break;
 	default:
 		EXCEPTION("unknown change type.");
@@ -970,7 +970,7 @@ common::error filesync::FileSync::check_sync_path()
 bool filesync::FileSync::get_file_changes()
 {
 start:
-	common::print_info("checking server changes");
+	logger->debug("checking server changes");
 	std::string url_path = common::string_format("/api/commit/changes?commit_id=%s", this->conf.commit_id.c_str());
 	common::http_client c{this->cfg.server_ip.c_str(), common::string_format("%d", this->cfg.server_port).c_str(), url_path.c_str(), get_token(account)};
 	c.GET();
@@ -1021,7 +1021,8 @@ filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 {
 	this->cfg = cfg;
 	this->server_location = server_location;
-	this->db = filesync::db_manager{};
+	this->logger = new Logger();
+	this->db = new filesync::db_manager{this->logger};
 	this->committer = new ChangeCommitter(*this);
 	this->monitor = NULL;
 	this->_tcp_client = NULL;
@@ -1033,6 +1034,8 @@ filesync::FileSync::~FileSync()
 	delete[] (this->server_location);
 	delete (this->monitor);
 	delete this->_tcp_client;
+	delete this->logger;
+	delete this->db;
 
 	this->committer = NULL;
 	this->server_location = NULL;

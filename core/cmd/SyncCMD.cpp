@@ -51,7 +51,7 @@ void SyncCMD::addRunCmd(CLI::App *parent)
             common::print_info(err.message());
             return;
         }
-        filesync->db.init(filesync->conf.db_path.c_str());
+        filesync->db->init(filesync->conf.db_path.c_str());
         if(!filesync->get_all_server_files(filesync::GET_SERVER_FILES_RETRY_MAX_TIMES))
         {
             filesync::print_info("errors while getting server files");

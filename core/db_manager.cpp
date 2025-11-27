@@ -8,13 +8,14 @@
 #include <assert.h>
 #include <regex>
 using namespace nlohmann;
-filesync::db_manager::db_manager() : db_file_name{NULL}, db{NULL}
+filesync::db_manager::db_manager(ILogger *logger) : db_file_name{NULL}, db{NULL}, logger{logger}
 {
 }
 filesync::db_manager::~db_manager()
 {
-	delete[](this->db_file_name);
-	//delete (this->db);free(): invalid pointer
+	delete[] (this->db_file_name);
+	delete logger;
+	// delete (this->db);free(): invalid pointer
 }
 int filesync::db_manager::sqlite_callback(void *result, int n, char **value, char **column)
 {
@@ -88,7 +89,7 @@ std::unique_ptr<filesync::sqlite_query_result> filesync::db_manager::get_file(co
 	assert(result.get());
 	if (result.get()->count > 1)
 	{
-		//std::cout << "duplicated records found,deleting..." << std::endl;
+		// std::cout << "duplicated records found,deleting..." << std::endl;
 		filesync::EXCEPTION("duplicated records found,deleting...");
 	}
 	return result;
@@ -179,8 +180,12 @@ bool filesync::db_manager::add_file(const char *filename, const char *md5, const
 		rc = sqlite3_bind_text(stmt, 4, id, strlen(id), NULL);
 		assert(rc == SQLITE_OK);
 		rc = sqlite3_step(stmt);
+		if (rc != SQLITE_DONE)
+		{
+			fprintf(stderr, "SQLite error: %s\n", sqlite3_errmsg(db));
+		}
 		assert(rc == SQLITE_DONE);
-		//std::cout << "[SQL OK:]add file " << filename << std::endl;
+		// std::cout << "[SQL OK:]add file " << filename << std::endl;
 		rc = sqlite3_finalize(stmt);
 		assert(rc == SQLITE_OK);
 		return true;
@@ -200,7 +205,7 @@ bool filesync::db_manager::delete_file(const char *filename)
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]delete_file " << fuzzy << std::endl;
+	// std::cout << "[SQL OK:]delete_file " << fuzzy << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -215,7 +220,7 @@ bool filesync::db_manager::restore_file(const char *filename)
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]restore_file " << filename << std::endl;
+	// std::cout << "[SQL OK:]restore_file " << filename << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -254,7 +259,7 @@ bool filesync::db_manager::update_md5(const char *filename, const char *md5)
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]update_md5" << filename << std::endl;
+	// std::cout << "[SQL OK:]update_md5" << filename << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -276,7 +281,7 @@ bool filesync::db_manager::update_local_md5(const char *filename, const char *lo
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]update_local_md5" << filename << std::endl;
+	// std::cout << "[SQL OK:]update_local_md5" << filename << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -297,7 +302,7 @@ bool filesync::db_manager::initialize_db()
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]initialize_db->" << this->db_file_name << std::endl;
+	// std::cout << "[SQL OK:]initialize_db->" << this->db_file_name << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -312,7 +317,7 @@ bool filesync::db_manager::delete_file_hard(const char *filename)
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]delete_file_hard " << filename << std::endl;
+	// std::cout << "[SQL OK:]delete_file_hard " << filename << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -325,7 +330,7 @@ bool filesync::db_manager::clear_files()
 	assert(rc == SQLITE_OK);
 	rc = sqlite3_step(stmt);
 	assert(rc == SQLITE_DONE);
-	//std::cout << "[SQL OK:]clear all files"  << std::endl;
+	// std::cout << "[SQL OK:]clear all files"  << std::endl;
 	rc = sqlite3_finalize(stmt);
 	assert(rc == SQLITE_OK);
 	return true;
@@ -357,9 +362,10 @@ void filesync::db_manager::init(const char *db_path)
 	else
 	{
 		this->opendb();
-		//this->db_manager.clear_files();
+		// this->db_manager.clear_files();
 		this->initialize_db();
 	}
+	logger->debug(common::string_format("use sqlite db:%s", db_file_name).c_str());
 }
 
 const char *filesync::sqlite_callback_result::get_value(const char *colume_name, int row)
@@ -410,23 +416,23 @@ const char *filesync::sqlite_query_result::get_value(const char *colume_name, in
 
 filesync::sqlite_query_result::~sqlite_query_result()
 {
-	//for (int i = 0; i < this->column_count; i++) {
+	// for (int i = 0; i < this->column_count; i++) {
 	//	delete(this->column[i]);
-	//}
+	// }
 	for (int i = 0; i < this->count; i++)
 	{
 		char **value = this->value[i];
 		for (int j = 0; j < this->column_count; j++)
 		{
-			delete[](value[j]);
+			delete[] (value[j]);
 		}
-		delete[](value);
+		delete[] (value);
 	}
 	/*for (int i = 0; i < this->column_count; i++)
 	{
 		delete[](this->column[i]);
 	}*/
-	delete[](this->column);
+	delete[] (this->column);
 	assert(sqlite3_finalize(stmt) == SQLITE_OK);
 }
 
@@ -453,9 +459,9 @@ filesync::create_file_action::create_file_action()
 }
 filesync::create_file_action::~create_file_action()
 {
-	delete[](this->location);
-	delete[](this->md5);
-	delete[](this->name);
+	delete[] (this->location);
+	delete[] (this->md5);
+	delete[] (this->name);
 
 	this->location = NULL;
 	this->md5 = NULL;
@@ -479,7 +485,7 @@ filesync::create_directory_action::create_directory_action()
 }
 filesync::create_directory_action::~create_directory_action()
 {
-	delete[](this->path);
+	delete[] (this->path);
 
 	this->path = NULL;
 }
@@ -506,8 +512,8 @@ filesync::delete_by_path_action::delete_by_path_action()
 }*/
 filesync::delete_by_path_action::~delete_by_path_action()
 {
-	delete[](this->commit_id);
-	delete[](this->path);
+	delete[] (this->commit_id);
+	delete[] (this->path);
 
 	this->commit_id = NULL;
 	this->file_type = 0;

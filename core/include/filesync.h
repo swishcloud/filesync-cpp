@@ -18,6 +18,7 @@
 #include <queue>
 #include <mutex>
 #include <server.h>
+#include <logger.h>
 // TODO: Reference additional headers your program requires here.
 namespace filesync
 {
@@ -103,13 +104,14 @@ private:
 	std::queue<common::monitor::change *> _local_file_changes;
 	void on_file_downloaded(PATH full_path, std::string md5);
 	void on_file_uploaded(PATH full_path, std::string md5);
+	ILogger *logger;
 
 public:
 	static void monitor_cb(common::monitor::change *c, void *obj);
 	common::monitor::MONITOR *monitor;
 	std::string account;
 	filesync::PartitionConf conf;
-	filesync::db_manager db;
+	filesync::db_manager *db;
 	filesync::tcp_client *_tcp_client;
 	CONFIG cfg;
 	ChangeCommitter *committer;

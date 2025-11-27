@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <memory>
+#include <logger.h>
 using json = nlohmann::json;
 namespace filesync
 {
@@ -58,7 +59,7 @@ namespace filesync
 class filesync::db_manager
 {
 public:
-	db_manager();
+	db_manager(ILogger *logger);
 	~db_manager();
 	static int sqlite_callback(void *, int n, char **value, char **column);
 	std::unique_ptr<filesync::sqlite_query_result> sqlite3_query(sqlite3_stmt *stmt);
@@ -83,6 +84,7 @@ public:
 private:
 	char *db_file_name;
 	sqlite3 *db;
+	ILogger *logger;
 };
 class filesync::sqlite_callback_result
 {
