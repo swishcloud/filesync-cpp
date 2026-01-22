@@ -210,7 +210,7 @@ namespace filesync
 
                         if (error)
                         {
-                            throw common::exception(common::string_format("failed to read bytes into the block file with error:", error));
+                            throw common::exception(common::string_format("failed to read bytes into the block file with error:", error.message()));
                         }
                         else if (completed)
                         {
@@ -272,7 +272,7 @@ namespace filesync
                                 json resp = json::parse(this->http_client.resp_text);
                                 if (!resp["error"].empty())
                                 {
-                                    throw common::exception(common::string_format("Api error:", resp["error"].get<std::string>()));
+                                    throw common::exception(common::string_format("Api error:", resp["error"].get<std::string>().c_str()));
                                 }
                                 //reply
                                 auto msg = XTCP::message{};

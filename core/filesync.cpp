@@ -960,8 +960,10 @@ common::error filesync::FileSync::check_sync_path()
 	assert(this->monitor == NULL);
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
-#else
+#elif  _WIN32
 	this->monitor = new common::monitor::win_monitor(this->conf.sync_path.string());
+#else
+	#warning "Monitor not supported on this platform"
 #endif
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);

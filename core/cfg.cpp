@@ -67,7 +67,7 @@ void filesync::CONFIG::save()
 	out << json_str;
 	if (out.bad())
 	{
-		filesync::EXCEPTION(common::string_format("failed to write file %s", this->path()));
+		filesync::EXCEPTION(common::string_format("failed to write file %s", this->path().c_str()));
 	}
 	out.flush();
 	out.close();
@@ -133,7 +133,7 @@ void filesync::PartitionConf::save()
 	std::ofstream out(this->partition_cfg_path);
 	if (out.bad())
 	{
-		filesync::EXCEPTION(common::string_format("can not open file %s", this->partition_cfg_path));
+		filesync::EXCEPTION(common::string_format("can not open file %s", this->partition_cfg_path.c_str()));
 	}
 	out << j;
 	out.close();
