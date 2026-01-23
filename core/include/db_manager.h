@@ -108,4 +108,155 @@ public:
 	const char *get_value(const char *colume_name, int row = 0);
 	~sqlite_query_result();
 };
+#include <sqlite3.h>
+#include <string>
+#include <stdexcept>
+#include <utility>
+
+class SqliteDbSchema {
+public:
+    explicit SqliteDbSchema(std::string dbPath)
+        : dbPath_(std::move(dbPath)), db_(nullptr) {}
+
+    ~SqliteDbSchema() {
+        closeNoThrow();
+    }
+
+    // Non-copyable
+    SqliteDbSchema(const SqliteDbSchema&) = delete;
+    SqliteDbSchema& operator=(const SqliteDbSchema&) = delete;
+
+    // Movable
+    SqliteDbSchema(SqliteDbSchema&& other) noexcept
+        : dbPath_(std::move(other.dbPath_)), db_(other.db_) {
+        other.db_ = nullptr;
+    }
+
+    SqliteDbSchema& operator=(SqliteDbSchema&& other) noexcept {
+        if (this != &other) {
+            closeNoThrow();
+            dbPath_ = std::move(other.dbPath_);
+            db_ = other.db_;
+            other.db_ = nullptr;
+        }
+        return *this;
+    }
+
+    // Open DB connection (safe to call multiple times)
+    void open() {
+        if (db_) return;
+
+        sqlite3* tmp = nullptr;
+        int rc = sqlite3_open(dbPath_.c_str(), &tmp);
+        if (rc != SQLITE_OK) {
+            std::string msg = "Cannot open DB: ";
+            msg += (tmp ? sqlite3_errmsg(tmp) : "unknown error");
+            if (tmp) sqlite3_close(tmp);
+            throw std::runtime_error(msg);
+        }
+        db_ = tmp;
+
+        // Recommended pragmas for safety / concurrency
+        exec("PRAGMA foreign_keys = ON;");
+        exec("PRAGMA journal_mode = WAL;");
+        exec("PRAGMA synchronous = NORMAL;");
+        exec("PRAGMA busy_timeout = 5000;");
+    }
+
+    void close() {
+        if (!db_) return;
+        sqlite3_close(db_);
+        db_ = nullptr;
+    }
+
+    // Create tables + indexes
+    void createSchema() {
+        open();
+
+        exec(
+            "CREATE TABLE IF NOT EXISTS items ("
+            "    id                 TEXT PRIMARY KEY,"
+            "    server_file_id     TEXT UNIQUE,"
+            "    parent_id          TEXT NULL,"
+            "    name               TEXT NOT NULL,"
+            "    is_dir             INTEGER NOT NULL DEFAULT 0,"
+            "    size               INTEGER NOT NULL DEFAULT 0,"
+            "    mtime_ms           INTEGER NOT NULL DEFAULT 0,"
+            "    local_path         TEXT NOT NULL DEFAULT '',"
+            "    is_placeholder     INTEGER NOT NULL DEFAULT 1,"
+            "    pinned_offline     INTEGER NOT NULL DEFAULT 0,"
+            "    deleted            INTEGER NOT NULL DEFAULT 0,"
+            "    deleted_at_ms      INTEGER NOT NULL DEFAULT 0,"
+            "    server_rev         TEXT,"
+            "    server_mtime_ms    INTEGER NOT NULL DEFAULT 0,"
+            "    dirty              INTEGER NOT NULL DEFAULT 0,"
+            "    sync_stage         INTEGER NOT NULL DEFAULT 0,"
+            "    inflight_op_id     TEXT,"
+            "    inflight_since_ms  INTEGER NOT NULL DEFAULT 0,"
+            "    last_error         TEXT NOT NULL DEFAULT '',"
+            "    retry_count        INTEGER NOT NULL DEFAULT 0,"
+            "    conflict           INTEGER NOT NULL DEFAULT 0,"
+            "    created_at_ms      INTEGER NOT NULL DEFAULT (unixepoch()*1000),"
+            "    updated_at_ms      INTEGER NOT NULL DEFAULT (unixepoch()*1000),"
+            "    CHECK (is_dir IN (0,1)),"
+            "    CHECK (is_placeholder IN (0,1)),"
+            "    CHECK (pinned_offline IN (0,1)),"
+            "    CHECK (deleted IN (0,1)),"
+            "    CHECK (dirty IN (0,1)),"
+            "    CHECK (conflict IN (0,1)),"
+            "    CHECK (sync_stage >= 0),"
+            "    CHECK (retry_count >= 0)"
+            ");"
+        );
+
+        exec(
+            "CREATE INDEX IF NOT EXISTS idx_items_parent_deleted "
+            "ON items(parent_id, deleted);"
+        );
+
+        exec(
+            "CREATE INDEX IF NOT EXISTS idx_items_dirty_stage "
+            "ON items(dirty, sync_stage);"
+        );
+
+        exec(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_items_sibling_name_alive "
+            "ON items(parent_id, name) "
+            "WHERE deleted = 0;"
+        );
+
+        exec(
+            "CREATE INDEX IF NOT EXISTS idx_items_server_file_id "
+            "ON items(server_file_id);"
+        );
+    }
+
+    sqlite3* handle() const noexcept { return db_; }
+
+private:
+    void exec(const char* sql) {
+        char* err = nullptr;
+        int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
+        if (rc != SQLITE_OK) {
+            std::string msg = "SQLite exec failed: ";
+            msg += (err ? err : "(no error message)");
+            msg += "\nSQL was:\n";
+            msg += sql;
+            if (err) sqlite3_free(err);
+            throw std::runtime_error(msg);
+        }
+    }
+
+    void closeNoThrow() noexcept {
+        if (db_) {
+            sqlite3_close(db_);
+            db_ = nullptr;
+        }
+    }
+
+private:
+    std::string dbPath_;
+    sqlite3* db_;
+};
+
 #endif

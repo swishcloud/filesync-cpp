@@ -4,6 +4,7 @@
 #include <common.h>
 #include <regex>
 #include <nlohmann/json.hpp>
+#include "file_repository.h"
 #ifdef __linux__
 #define linux_os true
 #else
@@ -39,5 +40,11 @@ namespace filesync
     };
     void EXCEPTION(std::string err);
     void PLATFORM_NOT_SUPPORTED();
+    class UuidGenerator:public IUuidGenerator {
+public:
+    std::string newUuid(){
+        return common::uuid();
+    }
+};
 } // namespace filesync
 #endif
