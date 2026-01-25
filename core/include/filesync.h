@@ -169,4 +169,57 @@ public:
 	std::string first_commit_id;
 	std::string partition_id;
 };
+class IWebAPI
+{
+public:
+	~IWebAPI() = default;
+	std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision);
+};
+class WebAPI : public IWebAPI
+{
+private:
+	const std::string serverIP;
+	const std::string port;
+	const std::string token;
+
+public:
+	WebAPI(const std::string &serverIP, const std::string &port, const std::string &token) : serverIP(serverIP), port(port), token(token)
+	{
+	}
+	std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision)
+	{
+
+		std::vector<filesync::File> files;
+		std::cout << path << std::endl;
+		std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s", path.c_str(), revision.c_str());
+
+		common::http_client c{serverIP, port, url_path, token};
+		c.GET();
+		if (c.error)
+		{
+			throw std::runtime_error(c.error.message());
+		}
+		auto j = json::parse(c.resp_text);
+		auto err = j["error"];
+		if (!err.is_null())
+		{
+			throw std::runtime_error(err);
+		}
+		auto data = j["data"];
+		for (auto item : data)
+		{
+			std::string file_server_path = common::string_format("%s%s%s", path.c_str(), path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
+			filesync::File f;
+			f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
+			f.commit_id = item["commit_id"];
+			f.server_path = file_server_path;
+			std::string md5{};
+			if (!f.is_directory)
+			{
+				md5 = item["md5"].get<std::string>().c_str();
+			}
+		}
+		return files;
+	}
+};
 #endif
