@@ -160,8 +160,11 @@ public:
 	bool is_directory;
 	std::string md5;
 	std::size_t size;
+	std::size_t uploaded_size;
 	std::string commit_id;
 	std::string path;
+	std::string server_file_id;
+	bool is_completed;
 };
 class filesync::FSConnectResult
 {
@@ -211,11 +214,89 @@ class ConnectServer : public IConnectServer
 		return r;
 	}
 };
+class IFileUploader
+{
+public:
+	virtual ~IFileUploader() = default;
+	virtual bool upload_file(const filesync::ServerFile &sf, const std::string &filepath, const char *const md5, const long size, const std::string &token) = 0;
+};
+class FileUploader
+{
+public:
+	const std::string server_ip;
+	const int server_port;
+	FileUploader(const std::string &server_ip, const int &server_port) : server_ip(server_ip), server_port(server_port)
+	{
+	}
+	bool upload_file(const filesync::ServerFile &sf, const std::string &filepath, const char *const md5, const long size, const std::string &token)
+	{
+		XTCP::message reply;
+		std::promise<common::error> promise;
+		common::error err;
+		XTCP::message msg;
+		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
+		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
+		msg.addHeader({"path", sf.path});
+		msg.addHeader({"md5", md5});
+		msg.addHeader({"file_size", size});
+		msg.addHeader({"uploaded_size", sf.uploaded_size});
+		msg.addHeader({"server_file_id", sf.server_file_id});
+		msg.addHeader({TokenHeaderKey, token});
+		msg.body_size = size - sf.uploaded_size;
+		XTCP::send_message(&tcp_client.xclient.session, msg, err);
+		if (err)
+		{
+			throw common::exception(common::string_format("UPLOAD failed %s", err.message()));
+		}
+		std::shared_ptr<std::istream> fs = std::make_shared<std::istream>(filepath, std::ios_base::binary);
+		if (sf.uploaded_size > 0)
+			fs->seekg(sf.uploaded_size, std::ios_base::beg);
+		if (!fs)
+		{
+			throw common::exception(common::string_format("abnormal file stream"));
+		}
+		common::print_info(common::string_format("uploading file %s...", filepath));
+		size_t written = 0;
+		tcp_client.xclient.session.send_stream(
+			fs, [&promise, &written, &msg](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+			{
+			written += written_size;
+			auto percentage = (double)(written) / msg.body_size * 100;
+			std::cout << common::string_format("\ruploading %d/%d bytes, %.2f%%", written, msg.body_size, percentage);
+			if (error || completed)
+			{
+				promise.set_value(error);
+			} },
+			NULL);
+		err = promise.get_future().get();
+		if (err)
+		{
+			throw common::exception(err.message());
+		}
+		std::cout << std::endl;
+		common::print_info(common::string_format("waiting for server replying..."));
+		XTCP::read_message(&tcp_client.xclient.session, reply, err);
+		if (err)
+		{
+			throw common::exception(common::string_format("UPLOAD failed %s", err.message()));
+		}
+		if (reply.msg_type == static_cast<int>(filesync::tcp::MsgType::Reply))
+		{
+			// this->on_file_uploaded(full_path, md5);
+			return true;
+		}
+		else
+		{
+			throw common::exception(common::string_format("invalid msg type."));
+		}
+	}
+};
 class IWebAPI
 {
 public:
 	virtual ~IWebAPI() = default;
 	virtual std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision) = 0;
+	virtual filesync::ServerFile get_file_info(const std::string &md5, const size_t &size) = 0;
 };
 class WebAPI : public IWebAPI
 {
@@ -268,6 +349,29 @@ public:
 			files.push_back(f);
 		}
 		return files;
+	}
+	filesync::ServerFile get_file_info(const std::string &md5, const size_t &size)
+	{
+		std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
+		common::http_client c{serverIP, port, url_path.c_str(), token};
+		c.GET();
+		if (c.error)
+		{
+			throw common::exception(c.error.message());
+		}
+		auto j = json::parse(c.resp_text);
+		auto data = j["data"];
+		if (!j["error"].is_null())
+		{
+			throw common::exception(common::string_format("Failed to get file info from web server:%s", j["error"].get<std::string>().c_str()));
+		}
+		filesync::ServerFile sf;
+		sf.is_completed = data["is_completed"].get<bool>();
+		sf.path = data["path"].get<std::string>();
+		sf.size = std::stoul(data["size"].get<std::string>());
+		sf.uploaded_size = std::stoul(data["uploaded_size"].get<std::string>());
+		sf.server_file_id = data["server_file_id"].get<std::string>();
+		return sf;
 	}
 };
 
