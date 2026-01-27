@@ -218,7 +218,7 @@ class IFileUploader
 {
 public:
 	virtual ~IFileUploader() = default;
-	virtual bool upload_file(const filesync::ServerFile &sf, const std::string &filepath, const char *const md5, const long size, const std::string &token) = 0;
+	virtual bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &token) = 0;
 };
 class FileUploader
 {
@@ -228,7 +228,7 @@ public:
 	FileUploader(const std::string &server_ip, const int &server_port) : server_ip(server_ip), server_port(server_port)
 	{
 	}
-	bool upload_file(const filesync::ServerFile &sf, const std::string &filepath, const char *const md5, const long size, const std::string &token)
+	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &token)
 	{
 		XTCP::message reply;
 		std::promise<common::error> promise;
@@ -248,14 +248,12 @@ public:
 		{
 			throw common::exception(common::string_format("UPLOAD failed %s", err.message()));
 		}
-		std::shared_ptr<std::istream> fs = std::make_shared<std::istream>(filepath, std::ios_base::binary);
 		if (sf.uploaded_size > 0)
 			fs->seekg(sf.uploaded_size, std::ios_base::beg);
 		if (!fs)
 		{
 			throw common::exception(common::string_format("abnormal file stream"));
 		}
-		common::print_info(common::string_format("uploading file %s...", filepath));
 		size_t written = 0;
 		tcp_client.xclient.session.send_stream(
 			fs, [&promise, &written, &msg](size_t written_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)

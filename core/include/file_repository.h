@@ -46,6 +46,12 @@ public:
     // NOTE: your original signature copies string; kept as-is to match.
     virtual void updateServerFileId(const std::string &id, const std::string serverFileId) = 0;
     virtual void updateLocalPath(const std::string &id, const std::string localPath) = 0;
+    virtual void markDirty(const std::string &id) = 0;
+    // Return all items that need to be pushed to server
+    virtual std::vector<FileItem> listDirtyItems() = 0;
+
+    // Clear dirty flag after server confirms success
+    virtual void clearDirty(const std::string &id) = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -516,6 +522,59 @@ private:
         }
 
         return id;
+    }
+    std::vector<FileItem> listDirtyItems() override
+    {
+        const char *sql =
+            "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
+            "       local_path, is_placeholder, pinned_offline "
+            "FROM items "
+            "WHERE dirty = 1 "
+            "ORDER BY "
+            "    parent_id IS NOT NULL, " // root items first
+            "    is_dir DESC, "           // folders before files
+            "    name ASC;";
+
+        Stmt stmt(db_, sql);
+
+        std::vector<FileItem> out;
+        while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+        {
+            out.push_back(readFileItemRow(stmt.get()));
+        }
+        return out;
+    }
+
+    void clearDirty(const std::string &id) override
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET dirty = 0, "
+            "    sync_stage = 0, "
+            "    last_error = '', "
+            "    retry_count = 0, "
+            "    updated_at_ms = (unixepoch() * 1000) "
+            "WHERE id = ?1;";
+
+        Stmt stmt(db_, sql);
+        bindText(stmt.get(), 1, id);
+
+        stepMustDone(stmt.get(), "clearDirty");
+        ensureChanged("clearDirty");
+    }
+    void markDirty(const std::string &id) override
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET dirty = 1, "
+            "    updated_at_ms = (unixepoch() * 1000) "
+            "WHERE id = ?1;";
+
+        Stmt stmt(db_, sql);
+        bindText(stmt.get(), 1, id);
+
+        stepMustDone(stmt.get(), "markDirty");
+        ensureChanged("markDirty");
     }
 
 private:
