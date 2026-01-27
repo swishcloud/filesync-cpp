@@ -149,6 +149,7 @@ public:
 	std::string relative_path;
 	std::string server_path;
 	std::string commit_id;
+	std::string name;
 	bool is_directory;
 };
 class filesync::ServerFile
@@ -169,11 +170,52 @@ public:
 	std::string first_commit_id;
 	std::string partition_id;
 };
+class IConnectServer
+{
+public:
+	virtual ~IConnectServer() = default;
+	virtual filesync::FSConnectResult connect(const std::string &server_ip, const int &server_port, const std::string &token) = 0;
+};
+class ConnectServer : public IConnectServer
+{
+	filesync::FSConnectResult connect(const std::string &server_ip, const int &server_port, const std::string &token)
+	{
+		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
+		if (!tcp_client.connect())
+			throw common::exception("connect Web TCP Server failed");
+
+		// connect web server
+		XTCP::message msg;
+		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
+		msg.addHeader({"token", token});
+		common::error err;
+		XTCP::send_message(&tcp_client.xclient.session, msg, err);
+		if (err)
+		{
+			throw common::exception(err.message());
+		}
+		XTCP::message reply;
+		XTCP::read_message(&tcp_client.xclient.session, reply, err);
+		if (err)
+		{
+			throw common::exception(err.message());
+		}
+		if (!reply)
+		{
+			throw common::exception("connection failed");
+		}
+		filesync::FSConnectResult r;
+		r.max_commit_id = reply.getHeaderValue<std::string>("max_commit_id");
+		r.first_commit_id = reply.getHeaderValue<std::string>("first_commit_id");
+		r.partition_id = reply.getHeaderValue<std::string>("partition_id");
+		return r;
+	}
+};
 class IWebAPI
 {
 public:
-	~IWebAPI() = default;
-	std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision);
+	virtual ~IWebAPI() = default;
+	virtual std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision) = 0;
 };
 class WebAPI : public IWebAPI
 {
@@ -181,29 +223,33 @@ private:
 	const std::string serverIP;
 	const std::string port;
 	const std::string token;
+	const std::string maxid;
 
 public:
-	WebAPI(const std::string &serverIP, const std::string &port, const std::string &token) : serverIP(serverIP), port(port), token(token)
+	WebAPI(const std::string &serverIP, const std::string &port, const std::string &token, const std::string &maxid) : serverIP(serverIP), port(port), token(token), maxid(maxid)
 	{
 	}
 	std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision)
 	{
 
 		std::vector<filesync::File> files;
-		std::cout << path << std::endl;
-		std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s", path.c_str(), revision.c_str());
+		std::cout << "get_file_list:" << path << std::endl;
+		std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(path.c_str()).c_str(), revision.c_str(), maxid.c_str());
 
+		std::cout << "construct http_client" << std::endl;
 		common::http_client c{serverIP, port, url_path, token};
+		std::cout << "Send get request" << std::endl;
 		c.GET();
 		if (c.error)
 		{
-			throw std::runtime_error(c.error.message());
+			throw std::runtime_error(common::string_format("api request error:", c.error.message()));
 		}
+		// std::cout << c.resp_text << std::endl;
 		auto j = json::parse(c.resp_text);
 		auto err = j["error"];
 		if (!err.is_null())
 		{
-			throw std::runtime_error(err);
+			throw std::runtime_error("server error:" + err.get<std::string>());
 		}
 		auto data = j["data"];
 		for (auto item : data)
@@ -212,14 +258,26 @@ public:
 			filesync::File f;
 			f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
 			f.commit_id = item["commit_id"];
+			f.name = item["name"];
 			f.server_path = file_server_path;
 			std::string md5{};
 			if (!f.is_directory)
 			{
 				md5 = item["md5"].get<std::string>().c_str();
 			}
+			files.push_back(f);
 		}
 		return files;
 	}
 };
+
+class ITokenStore
+{
+public:
+	virtual ~ITokenStore() = default;
+	virtual bool save(const nlohmann::json &tokenJson) = 0;
+	virtual nlohmann::json load() = 0; // empty json {} if none / parse fail
+	virtual void clear() = 0;
+};
+
 #endif
