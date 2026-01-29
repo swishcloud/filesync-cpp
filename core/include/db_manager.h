@@ -54,6 +54,26 @@ namespace filesync
         ~delete_by_path_action();
         json to_json() override;
     };
+    struct move_action : action_base
+    {
+        char *id;
+        char *destinationPath;
+
+    public:
+        move_action();
+        ~move_action();
+        json to_json() override;
+    };
+    struct rename_action : action_base
+    {
+        char *id;
+        char *newName;
+
+    public:
+        rename_action();
+        ~rename_action();
+        json to_json() override;
+    };
 } // namespace filesync
 class filesync::db_manager
 {
@@ -188,7 +208,7 @@ public:
         exec(
             "CREATE TABLE IF NOT EXISTS items ("
             "    id                 TEXT PRIMARY KEY,"
-            "    server_file_id     TEXT,"
+            "    server_file_id     TEXT UNIQUE,"
             "    parent_id          TEXT NULL,"
             "    name               TEXT NOT NULL,"
             "    is_dir             INTEGER NOT NULL DEFAULT 0,"
@@ -201,6 +221,8 @@ public:
             "    deleted_at_ms      INTEGER NOT NULL DEFAULT 0,"
             "    server_rev         TEXT,"
             "    server_mtime_ms    INTEGER NOT NULL DEFAULT 0,"
+            "    server_parent_id_snapshot TEXT NULL,"
+            "    server_name_snapshot      TEXT NOT NULL DEFAULT '',"
             "    dirty              INTEGER NOT NULL DEFAULT 0,"
             "    sync_stage         INTEGER NOT NULL DEFAULT 0,"
             "    inflight_op_id     TEXT,"
@@ -233,10 +255,9 @@ public:
             "ON items(parent_id, name) "
             "WHERE deleted = 0;");
 
-        // exec(
-        //     "CREATE INDEX IF NOT EXISTS idx_items_server_file_id "
-        //     "ON items(server_file_id);"
-        // );
+        exec(
+            "CREATE INDEX IF NOT EXISTS idx_items_server_file_id "
+            "ON items(server_file_id);");
     }
 
     sqlite3 *handle() const noexcept { return db_; }

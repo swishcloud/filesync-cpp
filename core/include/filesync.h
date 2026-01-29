@@ -148,8 +148,10 @@ public:
 	std::string full_path;
 	std::string relative_path;
 	std::string server_path;
+	std::string id;
 	std::string commit_id;
 	std::string name;
+	std::string md5;
 	bool is_directory;
 };
 class filesync::ServerFile
@@ -220,7 +222,7 @@ public:
 	virtual ~IFileUploader() = default;
 	virtual bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &token) = 0;
 };
-class FileUploader
+class FileUploader : public IFileUploader
 {
 public:
 	const std::string server_ip;
@@ -235,6 +237,10 @@ public:
 		common::error err;
 		XTCP::message msg;
 		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
+		if (!tcp_client.connect())
+		{
+			throw common::exception("connect server failed");
+		}
 		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::UploadFile);
 		msg.addHeader({"path", sf.path});
 		msg.addHeader({"md5", md5});
@@ -338,11 +344,11 @@ public:
 			f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
 			f.commit_id = item["commit_id"];
 			f.name = item["name"];
+			f.id = item["id"];
 			f.server_path = file_server_path;
-			std::string md5{};
 			if (!f.is_directory)
 			{
-				md5 = item["md5"].get<std::string>().c_str();
+				f.md5 = item["md5"].get<std::string>().substr(0, 32);
 			}
 			files.push_back(f);
 		}
@@ -350,7 +356,7 @@ public:
 	}
 	filesync::ServerFile get_file_info(const std::string &md5, const size_t &size)
 	{
-		std::string url_path = common::string_format("/api/file-info?md5=%s&size=%d", md5, size);
+		std::string url_path = common::string_format("/api/file-info?md5=%s&size=%zu", md5.c_str(), size);
 		common::http_client c{serverIP, port, url_path.c_str(), token};
 		c.GET();
 		if (c.error)
@@ -364,7 +370,7 @@ public:
 			throw common::exception(common::string_format("Failed to get file info from web server:%s", j["error"].get<std::string>().c_str()));
 		}
 		filesync::ServerFile sf;
-		sf.is_completed = data["is_completed"].get<bool>();
+		sf.is_completed = data["is_completed"].get<std::string>() == "true";
 		sf.path = data["path"].get<std::string>();
 		sf.size = std::stoul(data["size"].get<std::string>());
 		sf.uploaded_size = std::stoul(data["uploaded_size"].get<std::string>());

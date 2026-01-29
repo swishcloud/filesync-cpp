@@ -1024,7 +1024,7 @@ filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 	this->cfg = cfg;
 	this->server_location = server_location;
 	this->db = filesync::db_manager{};
-	this->committer = new ChangeCommitter(*this);
+	this->committer = new ChangeCommitter(cfg.server_ip, cfg.server_port);
 	this->monitor = NULL;
 	this->_tcp_client = NULL;
 	this->corret_path_sepatator(this->server_location);

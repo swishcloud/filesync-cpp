@@ -26,6 +26,11 @@ struct FileItem
     std::string localPath;     // empty if not local
     bool isPlaceholder = true; // true if not downloaded / remote-only
     bool pinnedOffline = false;
+    bool is_deleted = false;
+    bool isDirty = false;
+    std::string serverRev; // server revision / etag / version
+    std::string server_parent_id_snapshot;
+    std::string server_name_snapshot;
 };
 
 class IFileRepository
@@ -52,6 +57,28 @@ public:
 
     // Clear dirty flag after server confirms success
     virtual void clearDirty(const std::string &id) = 0;
+    virtual void upsertFromServer(
+        const std::string &serverFileId,
+        const std::string &parentServerFileId, // empty => root
+        const std::string &name,
+        bool isDir,
+        std::int64_t size,
+        std::int64_t mtimeMs,
+        const std::string &serverRev) = 0;
+
+    virtual void applyServerDelete(const std::string &serverFileId) = 0;
+
+    // ack from server: clear dirty by server id
+    virtual void clearDirtyByServerId(const std::string &serverFileId) = 0;
+
+    // mapping helper
+    virtual std::optional<std::string>
+    getLocalIdByServerId(const std::string &serverFileId) = 0;
+    // Find a non-deleted child by name under a parent
+    // parentId: local id, use "root" for top-level
+    virtual std::optional<FileItem>
+    findChildByName(const std::string &parentId,
+                    const std::string &name) = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -107,14 +134,14 @@ public:
     {
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
             "FROM items "
             "WHERE parent_id IS NULL AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
             "FROM items "
             "WHERE parent_id = ?1 AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
@@ -137,7 +164,7 @@ public:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline "
+            "       local_path, is_placeholder, pinned_offline ,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
             "FROM items WHERE id = ?1;";
 
         Stmt stmt(db_, sql);
@@ -436,6 +463,13 @@ private:
             throw std::runtime_error("sqlite3_bind_int failed");
     }
 
+    static void bindInt64(sqlite3_stmt *st, int idx, std::int64_t v)
+    {
+        int rc = sqlite3_bind_int64(st, idx, static_cast<sqlite3_int64>(v));
+        if (rc != SQLITE_OK)
+            throw std::runtime_error("sqlite3_bind_int64 failed");
+    }
+
     void stepMustDone(sqlite3_stmt *st, const char *where)
     {
         int rc = sqlite3_step(st);
@@ -488,6 +522,11 @@ private:
         it.localPath = colTextOrEmpty(st, 7);
         it.isPlaceholder = sqlite3_column_int(st, 8) != 0;
         it.pinnedOffline = sqlite3_column_int(st, 9) != 0;
+        it.serverRev = colTextOrEmpty(st, 10);
+        it.is_deleted = sqlite3_column_int(st, 11);
+        it.isDirty = sqlite3_column_int(st, 12);
+        it.server_parent_id_snapshot = colTextOrEmpty(st, 13);
+        it.server_name_snapshot = colTextOrEmpty(st, 14);
         return it;
     }
 
@@ -527,7 +566,7 @@ private:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
             "FROM items "
             "WHERE dirty = 1 "
             "ORDER BY "
@@ -575,6 +614,328 @@ private:
 
         stepMustDone(stmt.get(), "markDirty");
         ensureChanged("markDirty");
+    }
+    std::optional<std::string>
+    getLocalIdByServerId(const std::string &serverFileId) override
+    {
+        const char *sql = "SELECT id FROM items WHERE server_file_id = ?1 LIMIT 1;";
+        Stmt stmt(db_, sql);
+        bindText(stmt.get(), 1, serverFileId);
+
+        int rc = sqlite3_step(stmt.get());
+        if (rc == SQLITE_ROW)
+        {
+            const unsigned char *t = sqlite3_column_text(stmt.get(), 0);
+            return t ? std::optional<std::string>(reinterpret_cast<const char *>(t)) : std::nullopt;
+        }
+        if (rc == SQLITE_DONE)
+            return std::nullopt;
+
+        throw std::runtime_error(std::string("getLocalIdByServerId: step failed: ") + sqlite3_errmsg(db_));
+    }
+    std::optional<FileItem>
+    findChildByName(const std::string &parentId,
+                    const std::string &name) override
+    {
+        const bool isRoot = (parentId == "root");
+
+        const char *sql_root =
+            "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
+            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "FROM items "
+            "WHERE deleted = 0 "
+            "  AND parent_id IS NULL "
+            "  AND name = ?1 "
+            "LIMIT 1;";
+
+        const char *sql_child =
+            "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
+            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "FROM items "
+            "WHERE deleted = 0 "
+            "  AND parent_id = ?1 "
+            "  AND name = ?2 "
+            "LIMIT 1;";
+
+        Stmt stmt(db_, isRoot ? sql_root : sql_child);
+
+        if (isRoot)
+        {
+            bindText(stmt.get(), 1, name);
+        }
+        else
+        {
+            bindText(stmt.get(), 1, parentId);
+            bindText(stmt.get(), 2, name);
+        }
+
+        int rc = sqlite3_step(stmt.get());
+        if (rc == SQLITE_ROW)
+        {
+            return readFileItemRow(stmt.get());
+        }
+        if (rc == SQLITE_DONE)
+        {
+            return std::nullopt;
+        }
+
+        throw std::runtime_error(
+            std::string("findChildByName: sqlite3_step failed: ") +
+            sqlite3_errmsg(db_));
+    }
+    std::optional<std::string>
+    getParentLocalIdFromParentServerId(const std::string &parentServerFileId)
+    {
+        if (parentServerFileId.empty())
+            return std::nullopt; // root => NULL in DB
+
+        auto parentLocal = getLocalIdByServerId(parentServerFileId);
+        if (!parentLocal)
+        {
+            throw std::runtime_error(
+                "upsertFromServer: parent not found locally for parentServerFileId=" + parentServerFileId);
+        }
+        return parentLocal;
+    }
+    void upsertFromServer(
+        const std::string &serverFileId,
+        const std::string &parentServerFileId,
+        const std::string &name,
+        bool isDir,
+        std::int64_t size,
+        std::int64_t mtimeMs,
+        const std::string &serverRev) override
+    {
+        const auto localIdOpt = getLocalIdByServerId(serverFileId);
+        const auto parentLocalOpt = getParentLocalIdFromParentServerId(parentServerFileId);
+
+        if (!localIdOpt)
+        {
+            // INSERT
+            const std::string newLocalId = uuidGen_.newUuid();
+
+            const char *sql_root =
+                "INSERT INTO items ("
+                "  id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
+                "  local_path, is_placeholder, pinned_offline, "
+                "  deleted, deleted_at_ms, "
+                "  server_rev, server_mtime_ms, "
+                "  dirty, sync_stage, inflight_op_id, inflight_since_ms, last_error, retry_count, conflict, "
+                "  created_at_ms, updated_at_ms,server_parent_id_snapshot,server_name_snapshot"
+                ") VALUES ("
+                "  ?1, ?2, NULL, ?3, ?4, ?5, ?6, "
+                "  '', 1, 0, "
+                "  0, 0, "
+                "  ?7, ?8, "
+                "  0, 0, NULL, 0, '', 0, 0, "
+                "  (unixepoch()*1000), (unixepoch()*1000), "
+                "  ?9, ?10 "
+                ");";
+
+            const char *sql_child =
+                "INSERT INTO items ("
+                "  id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
+                "  local_path, is_placeholder, pinned_offline, "
+                "  deleted, deleted_at_ms, "
+                "  server_rev, server_mtime_ms, "
+                "  dirty, sync_stage, inflight_op_id, inflight_since_ms, last_error, retry_count, conflict, "
+                "  created_at_ms, updated_at_ms,server_parent_id_snapshot,server_name_snapshot"
+                ") VALUES ("
+                "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, "
+                "  '', 1, 0, "
+                "  0, 0, "
+                "  ?8, ?9, "
+                "  0, 0, NULL, 0, '', 0, 0, "
+                "  (unixepoch()*1000), (unixepoch()*1000), "
+                "  ?10, ?11 "
+                ");";
+
+            if (!parentLocalOpt)
+            {
+                Stmt stmt(db_, sql_root);
+                bindText(stmt.get(), 1, newLocalId);
+                bindText(stmt.get(), 2, serverFileId);
+                bindText(stmt.get(), 3, name);
+                bindInt(stmt.get(), 4, isDir ? 1 : 0);
+                bindInt64(stmt.get(), 5, size);
+                bindInt64(stmt.get(), 6, mtimeMs);
+                bindText(stmt.get(), 7, serverRev);
+                bindInt64(stmt.get(), 8, mtimeMs);
+                bindText(stmt.get(), 9, parentServerFileId);
+                bindText(stmt.get(), 10, name);
+                stepMustDone(stmt.get(), "upsertFromServer(insert root)");
+            }
+            else
+            {
+                Stmt stmt(db_, sql_child);
+                bindText(stmt.get(), 1, newLocalId);
+                bindText(stmt.get(), 2, serverFileId);
+                bindText(stmt.get(), 3, *parentLocalOpt);
+                bindText(stmt.get(), 4, name);
+                bindInt(stmt.get(), 5, isDir ? 1 : 0);
+                bindInt64(stmt.get(), 6, size);
+                bindInt64(stmt.get(), 7, mtimeMs);
+                bindText(stmt.get(), 8, serverRev);
+                bindInt64(stmt.get(), 9, mtimeMs);
+                bindText(stmt.get(), 10, parentServerFileId);
+                bindText(stmt.get(), 11, name);
+                stepMustDone(stmt.get(), "upsertFromServer(insert child)");
+            }
+            return;
+        }
+
+        // UPDATE existing
+        const std::string &localId = *localIdOpt;
+
+        // If local dirty=1, we should not stomp local intent; mark conflict and only update server_* fields.
+        {
+            const char *sqlDirty = "SELECT dirty FROM items WHERE id = ?1;";
+            Stmt stmt(db_, sqlDirty);
+            bindText(stmt.get(), 1, localId);
+
+            int rc = sqlite3_step(stmt.get());
+            if (rc != SQLITE_ROW)
+            {
+                throw std::runtime_error("upsertFromServer(update): local row disappeared");
+            }
+            const bool localDirty = sqlite3_column_int(stmt.get(), 0) != 0;
+
+            if (localDirty)
+            {
+                const char *sql =
+                    "UPDATE items SET "
+                    "  server_rev = ?1, "
+                    "  server_mtime_ms = ?2, "
+                    "  conflict = 1, "
+                    "  updated_at_ms = (unixepoch()*1000), "
+                    "  server_parent_id_snapshot = ?3, "
+                    "  server_name_snapshot = ?4 "
+                    "WHERE id = ?5;";
+
+                Stmt u(db_, sql);
+                bindText(u.get(), 1, serverRev);
+                bindInt64(u.get(), 2, mtimeMs);
+                bindText(u.get(), 3, parentServerFileId);
+                bindText(u.get(), 4, name);
+                bindText(u.get(), 5, localId);
+                stepMustDone(u.get(), "upsertFromServer(update dirty=1 => conflict)");
+                ensureChanged("upsertFromServer(update conflict)");
+                return;
+            }
+        }
+
+        // Local clean => apply server truth fully
+        const char *sql_root =
+            "UPDATE items SET "
+            "  parent_id = NULL, "
+            "  name = ?1, "
+            "  is_dir = ?2, "
+            "  size = ?3, "
+            "  mtime_ms = ?4, "
+            "  server_rev = ?5, "
+            "  server_mtime_ms = ?6, "
+            "  deleted = 0, "
+            "  deleted_at_ms = 0, "
+            "  conflict = 0, "
+            "  updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ?7;";
+
+        const char *sql_child =
+            "UPDATE items SET "
+            "  parent_id = ?1, "
+            "  name = ?2, "
+            "  is_dir = ?3, "
+            "  size = ?4, "
+            "  mtime_ms = ?5, "
+            "  server_rev = ?6, "
+            "  server_mtime_ms = ?7, "
+            "  deleted = 0, "
+            "  deleted_at_ms = 0, "
+            "  conflict = 0, "
+            "  updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ?8;";
+
+        if (!parentLocalOpt)
+        {
+            Stmt u(db_, sql_root);
+            bindText(u.get(), 1, name);
+            bindInt(u.get(), 2, isDir ? 1 : 0);
+            bindInt64(u.get(), 3, size);
+            bindInt64(u.get(), 4, mtimeMs);
+            bindText(u.get(), 5, serverRev);
+            bindInt64(u.get(), 6, mtimeMs);
+            bindText(u.get(), 7, localId);
+            stepMustDone(u.get(), "upsertFromServer(update root)");
+        }
+        else
+        {
+            Stmt u(db_, sql_child);
+            bindText(u.get(), 1, *parentLocalOpt);
+            bindText(u.get(), 2, name);
+            bindInt(u.get(), 3, isDir ? 1 : 0);
+            bindInt64(u.get(), 4, size);
+            bindInt64(u.get(), 5, mtimeMs);
+            bindText(u.get(), 6, serverRev);
+            bindInt64(u.get(), 7, mtimeMs);
+            bindText(u.get(), 8, localId);
+            stepMustDone(u.get(), "upsertFromServer(update child)");
+        }
+
+        ensureChanged("upsertFromServer(update)");
+    }
+    void applyServerDelete(const std::string &serverFileId) override
+    {
+        const auto localIdOpt = getLocalIdByServerId(serverFileId);
+        if (!localIdOpt)
+        {
+            // Already not present locally => nothing to do (idempotent)
+            return;
+        }
+        const std::string &localId = *localIdOpt;
+
+        const char *sql =
+            "WITH RECURSIVE tree(id) AS ("
+            "  SELECT id FROM items WHERE id = ?1 "
+            "  UNION ALL "
+            "  SELECT i.id FROM items i JOIN tree t ON i.parent_id = t.id "
+            ") "
+            "UPDATE items SET "
+            "  deleted = 1, "
+            "  deleted_at_ms = (unixepoch()*1000), "
+            "  dirty = 0, "
+            "  sync_stage = 0, "
+            "  inflight_op_id = NULL, "
+            "  inflight_since_ms = 0, "
+            "  last_error = '', "
+            "  retry_count = 0, "
+            "  conflict = 0, "
+            "  updated_at_ms = (unixepoch()*1000) "
+            "WHERE id IN (SELECT id FROM tree);";
+
+        Stmt stmt(db_, sql);
+        bindText(stmt.get(), 1, localId);
+
+        stepMustDone(stmt.get(), "applyServerDelete(cascade)");
+        ensureChanged("applyServerDelete(cascade)");
+    }
+    void clearDirtyByServerId(const std::string &serverFileId) override
+    {
+        const char *sql =
+            "UPDATE items SET "
+            "  dirty = 0, "
+            "  sync_stage = 0, "
+            "  inflight_op_id = NULL, "
+            "  inflight_since_ms = 0, "
+            "  last_error = '', "
+            "  retry_count = 0, "
+            "  updated_at_ms = (unixepoch()*1000) "
+            "WHERE server_file_id = ?1;";
+
+        Stmt stmt(db_, sql);
+        bindText(stmt.get(), 1, serverFileId);
+
+        stepMustDone(stmt.get(), "clearDirtyByServerId");
+        // if no row changed, that's OK: might be a race or already cleared
     }
 
 private:

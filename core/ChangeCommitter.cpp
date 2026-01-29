@@ -1,7 +1,7 @@
 #include <change_committer.h>
 #include <filesync.h>
 #include <http.h>
-filesync::ChangeCommitter::ChangeCommitter(FileSync &fs) : fs{fs}
+filesync::ChangeCommitter::ChangeCommitter(const std::string &server_ip, const int &port) : server_ip(server_ip), port(port)
 {
 	// filesync::PathNode root;
 	std::unique_ptr<PathNode> root{new filesync::PathNode{}};
@@ -13,7 +13,7 @@ filesync::ChangeCommitter::ChangeCommitter(FileSync &fs) : fs{fs}
 filesync::ChangeCommitter::~ChangeCommitter()
 {
 }
-filesync::ChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, action_base *action)
+filesync::IChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, action_base *action)
 {
 	const int MAX_ACTION_LIMIT = 50;
 
@@ -54,6 +54,8 @@ bool filesync::ChangeCommitter::commit(std::string token)
 	json j_directories_arr = json::array();
 	json j_file_arr = json::array();
 	json j_delete_arr = json::array();
+	json j_move_arr = json::array();
+	json j_rename_arr = json::array();
 	for (auto &node : this->actionTreeRoot->GetAllChildren())
 	{
 		for (auto &action : node->actions)
@@ -70,6 +72,14 @@ bool filesync::ChangeCommitter::commit(std::string token)
 			{
 				j_delete_arr.push_back(action->to_json());
 			}
+			else if (action->type == 4)
+			{
+				j_move_arr.push_back(action->to_json());
+			}
+			else if (action->type == 5)
+			{
+				j_rename_arr.push_back(action->to_json());
+			}
 			else
 			{
 				throw new common::exception("unrecognized action type.");
@@ -80,12 +90,14 @@ bool filesync::ChangeCommitter::commit(std::string token)
 	post_data.push_back({"directory_actions", j_directories_arr.dump().c_str()});
 	post_data.push_back({"file_actions", j_file_arr.dump().c_str()});
 	post_data.push_back({"delete_by_path_actions", j_delete_arr.dump().c_str()});
+	post_data.push_back({"move_actions", j_move_arr.dump().c_str()});
+	post_data.push_back({"rename_actions", j_rename_arr.dump().c_str()});
 	std::string resp;
 	bool ok = false;
 	if (this->actionTreeRoot->Size() > 0)
 	{
 		this->Dump();
-		common::http_client c{this->fs.cfg.server_ip.c_str(), common::string_format("%d", this->fs.cfg.server_port).c_str(), "/api/file", token != std::string{} ? token : fs.get_token(fs.account)};
+		common::http_client c{server_ip.c_str(), common::string_format("%d", port).c_str(), "/api/file", token.c_str()};
 		c.POST(post_data);
 		if (c.error)
 		{
@@ -112,28 +124,28 @@ bool filesync::ChangeCommitter::commit(std::string token)
 }
 void filesync::ChangeCommitter::Dump()
 {
-	std::string dump = this->actionTreeRoot->Dump();
-	auto dir = std::filesystem::path(this->fs.conf.partition_path).append("log");
-	if (!std::filesystem::exists(dir))
-	{
-		std::error_code ec;
-		if (!std::filesystem::create_directories(dir, ec))
-		{
-			common::print_info(common::string_format("failed to create directory '%s':%s", dir.string().c_str(), ec.message().c_str()));
-			return;
-		}
-	}
-	auto path = dir.append(common::currentDateTime());
-	std::ofstream out(path);
-	if (!out)
-	{
-		common::print_info(common::string_format("failed to create file '%s'", path.string().c_str()));
-	}
-	else
-	{
-		out << dump;
-	}
-	out.close();
+	// std::string dump = this->actionTreeRoot->Dump();
+	// auto dir = std::filesystem::path(this->fs.conf.partition_path).append("log");
+	// if (!std::filesystem::exists(dir))
+	// {
+	// 	std::error_code ec;
+	// 	if (!std::filesystem::create_directories(dir, ec))
+	// 	{
+	// 		common::print_info(common::string_format("failed to create directory '%s':%s", dir.string().c_str(), ec.message().c_str()));
+	// 		return;
+	// 	}
+	// }
+	// auto path = dir.append(common::currentDateTime());
+	// std::ofstream out(path);
+	// if (!out)
+	// {
+	// 	common::print_info(common::string_format("failed to create file '%s'", path.string().c_str()));
+	// }
+	// else
+	// {
+	// 	out << dump;
+	// }
+	// out.close();
 }
 filesync::PathNode::PathNode()
 {
