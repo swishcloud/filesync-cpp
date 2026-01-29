@@ -11,6 +11,22 @@
 #include <stdexcept>
 #include <utility>
 #include <iostream>
+enum class SyncStage : int
+{
+    Idle = 0, // no pending sync work (clean or already handled)
+
+    PullNeeded = 1, // server has newer metadata/content
+    Pulling = 2,    // currently downloading metadata/content
+
+    PushNeeded = 3, // local changes need to be uploaded
+    Pushing = 4,    // currently uploading
+
+    Conflict = 5, // conflict detected, requires resolution
+
+    Error = 6, // last sync attempt failed (retryable)
+    Cancelled = 7
+};
+
 // ---- your structs/interfaces ----
 struct FileItem
 {
@@ -31,6 +47,7 @@ struct FileItem
     std::string serverRev; // server revision / etag / version
     std::string server_parent_id_snapshot;
     std::string server_name_snapshot;
+    SyncStage syncStage;
 };
 
 class IFileRepository
@@ -79,6 +96,14 @@ public:
     virtual std::optional<FileItem>
     findChildByName(const std::string &parentId,
                     const std::string &name) = 0;
+    virtual bool setSyncStage(
+        const std::string &id,
+        SyncStage stage) = 0;
+    virtual std::vector<FileItem>
+    listItemsNeedingDownload() = 0;
+    virtual bool requestDownload(const std::string &id) = 0;
+    virtual bool cancelDownload(const std::string &id) = 0;
+    virtual bool recoverPullingToPullNeeded() = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -134,14 +159,14 @@ public:
     {
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id IS NULL AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id = ?1 AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
@@ -164,7 +189,7 @@ public:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline ,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline ,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items WHERE id = ?1;";
 
         Stmt stmt(db_, sql);
@@ -180,7 +205,6 @@ public:
     }
     std::string getFullPath(const std::string &id) override
     {
-        std::cout << "getFullPath:" << id << std::endl;
         if (id == "root" || id.empty())
             return "/";
 
@@ -527,6 +551,7 @@ private:
         it.isDirty = sqlite3_column_int(st, 12);
         it.server_parent_id_snapshot = colTextOrEmpty(st, 13);
         it.server_name_snapshot = colTextOrEmpty(st, 14);
+        it.syncStage = static_cast<SyncStage>(sqlite3_column_int(st, 15));
         return it;
     }
 
@@ -566,7 +591,7 @@ private:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE dirty = 1 "
             "ORDER BY "
@@ -641,7 +666,7 @@ private:
 
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id IS NULL "
@@ -650,7 +675,7 @@ private:
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot "
+            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id = ?1 "
@@ -936,6 +961,133 @@ private:
 
         stepMustDone(stmt.get(), "clearDirtyByServerId");
         // if no row changed, that's OK: might be a race or already cleared
+    }
+    bool setSyncStage(
+        const std::string &id,
+        SyncStage stage)
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET sync_stage = ?, "
+            "    updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ?;";
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_int(st, 1, static_cast<int>(stage));
+        sqlite3_bind_text(st, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
+    }
+    std::vector<FileItem> listItemsNeedingDownload()
+    {
+        const char *sql = R"sql(
+        SELECT
+            id,                      -- 0
+            server_file_id,          -- 1
+            parent_id,               -- 2
+            name,                    -- 3
+            is_dir,                  -- 4
+            size,                    -- 5
+            mtime_ms,                -- 6
+            local_path,              -- 7
+            is_placeholder,          -- 8
+            pinned_offline,          -- 9
+            server_rev,              -- 10
+            deleted,                 -- 11
+            dirty,                   -- 12
+            server_parent_id_snapshot,-- 13
+            server_name_snapshot,    -- 14
+            sync_stage               -- 15  <-- NEW
+        FROM items
+        WHERE deleted = 0
+          AND is_dir = 0
+          AND server_file_id IS NOT NULL
+          AND sync_stage = ?
+        ORDER BY name ASC
+    )sql";
+
+        sqlite3_stmt *st = nullptr;
+        std::vector<FileItem> out;
+
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return out;
+
+        sqlite3_bind_int(st, 1, static_cast<int>(SyncStage::PullNeeded)); // usually 1
+
+        while (sqlite3_step(st) == SQLITE_ROW)
+        {
+            out.push_back(readFileItemRow(st));
+        }
+
+        sqlite3_finalize(st);
+        return out;
+    }
+
+    bool requestDownload(const std::string &id)
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET sync_stage = ?, "
+            "    is_placeholder = 1 "
+            "WHERE id = ? "
+            "  AND deleted = 0 "
+            "  AND server_file_id IS NOT NULL;";
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_int(st, 1, static_cast<int>(SyncStage::PullNeeded));
+        sqlite3_bind_text(st, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
+    }
+    bool recoverPullingToPullNeeded()
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET sync_stage = ? "
+            "WHERE sync_stage = ?;";
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_int(st, 1, static_cast<int>(SyncStage::PullNeeded)); // 1
+        sqlite3_bind_int(st, 2, static_cast<int>(SyncStage::Pulling));    // 2
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
+    }
+    bool cancelDownload(const std::string &id)
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET sync_stage = ?, "
+            "    updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ? "
+            "  AND deleted = 0 "
+            "  AND sync_stage = ?;"; // only cancel if currently Pulling
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_int(st, 1, static_cast<int>(SyncStage::Cancelled));
+        sqlite3_bind_text(st, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(st, 3, static_cast<int>(SyncStage::Pulling));
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
     }
 
 private:
