@@ -313,6 +313,10 @@ public:
 	void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
 	{
 		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
+		if (!tcp_client.connect())
+		{
+			throw common::exception("connect server failed");
+		}
 		std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", common::url_encode(server_path.c_str()).c_str(), commit_id.c_str());
 		common::http_client c{server_ip, port, url_path.c_str(), token.c_str()};
 		c.GET();
