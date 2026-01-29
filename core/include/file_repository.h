@@ -104,6 +104,11 @@ public:
     virtual bool requestDownload(const std::string &id) = 0;
     virtual bool cancelDownload(const std::string &id) = 0;
     virtual bool recoverPullingToPullNeeded() = 0;
+    virtual bool markDownloaded(
+        const std::string &id,
+        const std::string &localPath,
+        std::int64_t size,
+        std::int64_t mtimeMs) = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -1084,6 +1089,40 @@ private:
         sqlite3_bind_int(st, 1, static_cast<int>(SyncStage::Cancelled));
         sqlite3_bind_text(st, 2, id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(st, 3, static_cast<int>(SyncStage::Pulling));
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
+    }
+    bool markDownloaded(
+        const std::string &id,
+        const std::string &localPath,
+        std::int64_t size,
+        std::int64_t mtimeMs)
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET local_path = ?, "
+            "    is_placeholder = 0, "
+            "    size = ?, "
+            "    mtime_ms = ?, "
+            "    dirty = 0, "
+            "    sync_stage = ?, "
+            "    retry_count = 0, "
+            "    last_error = '', "
+            "    updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ? "
+            "  AND deleted = 0;";
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_text(st, 1, localPath.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(st, 2, static_cast<sqlite3_int64>(size));
+        sqlite3_bind_int64(st, 3, static_cast<sqlite3_int64>(mtimeMs));
+        sqlite3_bind_int(st, 4, static_cast<int>(SyncStage::Idle));
+        sqlite3_bind_text(st, 5, id.c_str(), -1, SQLITE_TRANSIENT);
 
         bool ok = (sqlite3_step(st) == SQLITE_DONE);
         sqlite3_finalize(st);

@@ -295,6 +295,97 @@ public:
 		}
 	}
 };
+class IFileDownloader
+{
+public:
+	virtual ~IFileDownloader() = default;
+	virtual void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token) = 0;
+};
+class FileDownloader : public IFileDownloader
+{
+public:
+	const std::string server_ip;
+	const std::string port;
+	const int server_port;
+	FileDownloader(const std::string &server_ip, const std::string &port, const int &server_port) : server_ip(server_ip), port(port), server_port(server_port)
+	{
+	}
+	void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
+	{
+		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
+		std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", common::url_encode(server_path.c_str()).c_str(), commit_id.c_str());
+		common::http_client c{server_ip, port, url_path.c_str(), token.c_str()};
+		c.GET();
+		if (c.error)
+		{
+			throw common::exception(c.error.message());
+		}
+		auto j = json::parse(c.resp_text);
+		auto data = j["data"];
+		if (!j["error"].is_null())
+		{
+			throw common::exception(j["error"].get<std::string>());
+		}
+		auto ip = data["Ip"];
+		auto port = data["Port"];
+		auto path = data["Path"];
+		auto md5 = data["Md5"];
+		size_t size = data["Size"].get<std::size_t>();
+
+		XTCP::message msg;
+		msg.msg_type = static_cast<int>(filesync::tcp::MsgType::Download_File);
+		msg.addHeader({"path", path.get<std::string>()});
+		msg.addHeader({TokenHeaderKey, token});
+		common::error err;
+		XTCP::send_message(&tcp_client.xclient.session, msg, err);
+		if (err)
+		{
+			throw common::exception(common::string_format("DOWNLOAD failed %s", err.message()));
+		}
+		XTCP::message reply;
+		XTCP::read_message(&tcp_client.xclient.session, reply, err);
+		if (err)
+		{
+			throw common::exception(common::string_format("DOWNLOAD failed %s", err.message()));
+		}
+		if (!reply)
+		{
+			throw common::exception("file server have no response");
+		}
+		std::shared_ptr<std::ofstream> os{new std::ofstream{save_path, std::ios_base::binary}};
+		if (os->bad())
+		{
+			throw common::exception(common::string_format("failed to create a file named %s", save_path.c_str()));
+		}
+		std::promise<common::error> dl_promise;
+		size_t written{0};
+		common::print_info(common::string_format("Downloading %s", server_path.c_str()));
+		tcp_client.xclient.session.receive_stream(
+			os, reply.body_size, [&written, &reply, &dl_promise](size_t read_size, XTCP::tcp_session *session, bool completed, common::error error, void *p)
+			{
+			written += read_size;
+			auto percentage = (double)(written) / reply.body_size * 100;
+			std::cout << common::string_format("\rreceived %d/%d bytes, %.2f%%", written, reply.body_size, percentage);
+			if (completed || error)
+			{
+				dl_promise.set_value(error);
+				std::cout << '\n';
+			} },
+			NULL);
+		err = dl_promise.get_future().get();
+		if (err)
+		{
+			throw common::exception(common::string_format("DOWNLOAD failed %s", err.message()));
+		}
+		os->flush();
+		os->close();
+		if (!filesync::compare_md5(common::file_md5(save_path.c_str()).c_str(), md5.get<std::string>().c_str()))
+		{
+			auto err = common::string_format("Downloaded a file but the MD5 value is wrong");
+			throw common::exception(err);
+		}
+	}
+};
 class IWebAPI
 {
 public:
