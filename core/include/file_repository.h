@@ -1137,7 +1137,7 @@ private:
         sqlite3_finalize(st);
         return ok;
     }
-    bool SqliteFileRepository::markDirectoryChildrenUpToDate(
+    bool markDirectoryChildrenUpToDate(
         const std::string &dirId,
         const std::string &serverRev)
     {
