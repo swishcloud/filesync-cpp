@@ -113,6 +113,8 @@ public:
     virtual bool markDirectoryChildrenUpToDate(
         const std::string &dirId,
         const std::string &serverRev) = 0;
+    virtual bool dismissDirtyItem(const std::string &itemId,
+                                  const std::string &reason) = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -1137,6 +1139,36 @@ private:
         sqlite3_finalize(st);
         return ok;
     }
+    bool dismissDirtyItem(const std::string &itemId,
+                          const std::string &reason) override
+    {
+        // If the item doesn't exist, treat as success (idempotent) or throw.
+        // Your repo style usually throws on "no rows affected", but for "dismiss"
+        // idempotent behavior is often nicer. I'll keep it strict like your others.
+        const char *sql =
+            "UPDATE items "
+            "SET dirty = 0, "
+            "    sync_stage = ?1, "
+            "    last_error = ?2, "
+            "    retry_count = 0, "
+            "    updated_at_ms = (unixepoch() * 1000) "
+            "WHERE id = ?3;";
+
+        // Use your RAII Stmt + bind helpers
+        Stmt stmt(db_, sql);
+
+        // Mark as Error so UI can show "failed but dismissed" if you still list by stage later.
+        // If you prefer it totally clean, use SyncStage::Idle instead.
+        bindInt(stmt.get(), 1, static_cast<int>(SyncStage::Error));
+        bindText(stmt.get(), 2, reason);
+        bindText(stmt.get(), 3, itemId);
+
+        stepMustDone(stmt.get(), "dismissDirtyItem");
+        ensureChanged("dismissDirtyItem");
+
+        return true;
+    }
+
     bool markDirectoryChildrenUpToDate(
         const std::string &dirId,
         const std::string &serverRev)
