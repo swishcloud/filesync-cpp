@@ -679,7 +679,7 @@ private:
 
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_re,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline, server_rer,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id IS NULL "
