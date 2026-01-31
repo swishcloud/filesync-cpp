@@ -45,6 +45,7 @@ struct FileItem
     bool is_deleted = false;
     bool isDirty = false;
     std::string serverRev; // server revision / etag / version
+    std::string localServerRev;
     std::string server_parent_id_snapshot;
     std::string server_name_snapshot;
     SyncStage syncStage;
@@ -109,6 +110,9 @@ public:
         const std::string &localPath,
         std::int64_t size,
         std::int64_t mtimeMs) = 0;
+    virtual bool markDirectoryChildrenUpToDate(
+        const std::string &dirId,
+        const std::string &serverRev) = 0;
 };
 
 // ---- UUID interface (inject from your project) ----
@@ -164,14 +168,14 @@ public:
     {
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id IS NULL AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id = ?1 AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
@@ -194,7 +198,7 @@ public:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline ,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline ,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items WHERE id = ?1;";
 
         Stmt stmt(db_, sql);
@@ -546,17 +550,21 @@ private:
         it.parentId = parentApiFromDb(st, 2);
         it.name = colTextOrEmpty(st, 3);
         it.isDir = sqlite3_column_int(st, 4) != 0;
-        it.size = static_cast<std::int64_t>(sqlite3_column_int64(st, 5));
-        it.mtimeMs = static_cast<std::int64_t>(sqlite3_column_int64(st, 6));
+        it.size = sqlite3_column_int64(st, 5);
+        it.mtimeMs = sqlite3_column_int64(st, 6);
         it.localPath = colTextOrEmpty(st, 7);
         it.isPlaceholder = sqlite3_column_int(st, 8) != 0;
         it.pinnedOffline = sqlite3_column_int(st, 9) != 0;
+
         it.serverRev = colTextOrEmpty(st, 10);
-        it.is_deleted = sqlite3_column_int(st, 11);
-        it.isDirty = sqlite3_column_int(st, 12);
-        it.server_parent_id_snapshot = colTextOrEmpty(st, 13);
-        it.server_name_snapshot = colTextOrEmpty(st, 14);
-        it.syncStage = static_cast<SyncStage>(sqlite3_column_int(st, 15));
+        it.localServerRev = colTextOrEmpty(st, 11);
+
+        it.is_deleted = sqlite3_column_int(st, 12);
+        it.isDirty = sqlite3_column_int(st, 13);
+        it.server_parent_id_snapshot = colTextOrEmpty(st, 14);
+        it.server_name_snapshot = colTextOrEmpty(st, 15);
+
+        it.syncStage = static_cast<SyncStage>(sqlite3_column_int(st, 16));
         return it;
     }
 
@@ -596,7 +604,7 @@ private:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE dirty = 1 "
             "ORDER BY "
@@ -671,7 +679,7 @@ private:
 
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline, server_re,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id IS NULL "
@@ -680,7 +688,7 @@ private:
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline, server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id = ?1 "
@@ -1003,11 +1011,12 @@ private:
             is_placeholder,          -- 8
             pinned_offline,          -- 9
             server_rev,              -- 10
-            deleted,                 -- 11
-            dirty,                   -- 12
-            server_parent_id_snapshot,-- 13
-            server_name_snapshot,    -- 14
-            sync_stage               -- 15  <-- NEW
+            local_server_rev,        -- 11
+            deleted,                 -- 12
+            dirty,                   -- 13
+            server_parent_id_snapshot,-- 14
+            server_name_snapshot,    -- 15
+            sync_stage               -- 16
         FROM items
         WHERE deleted = 0
           AND is_dir = 0
@@ -1123,6 +1132,31 @@ private:
         sqlite3_bind_int64(st, 3, static_cast<sqlite3_int64>(mtimeMs));
         sqlite3_bind_int(st, 4, static_cast<int>(SyncStage::Idle));
         sqlite3_bind_text(st, 5, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        bool ok = (sqlite3_step(st) == SQLITE_DONE);
+        sqlite3_finalize(st);
+        return ok;
+    }
+    bool SqliteFileRepository::markDirectoryChildrenUpToDate(
+        const std::string &dirId,
+        const std::string &serverRev)
+    {
+        const char *sql =
+            "UPDATE items "
+            "SET local_server_rev = ?, "
+            "    sync_stage = ?, "
+            "    updated_at_ms = (unixepoch()*1000) "
+            "WHERE id = ? "
+            "  AND is_dir = 1 "
+            "  AND deleted = 0;";
+
+        sqlite3_stmt *st = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &st, nullptr) != SQLITE_OK)
+            return false;
+
+        sqlite3_bind_text(st, 1, serverRev.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(st, 2, static_cast<int>(SyncStage::Idle));
+        sqlite3_bind_text(st, 3, dirId.c_str(), -1, SQLITE_TRANSIENT);
 
         bool ok = (sqlite3_step(st) == SQLITE_DONE);
         sqlite3_finalize(st);

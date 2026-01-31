@@ -220,6 +220,7 @@ public:
             "    deleted            INTEGER NOT NULL DEFAULT 0,"
             "    deleted_at_ms      INTEGER NOT NULL DEFAULT 0,"
             "    server_rev         TEXT,"
+            "    local_server_rev   TEXT,"
             "    server_mtime_ms    INTEGER NOT NULL DEFAULT 0,"
             "    server_parent_id_snapshot TEXT NULL,"
             "    server_name_snapshot      TEXT NOT NULL DEFAULT '',"
