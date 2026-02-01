@@ -441,10 +441,10 @@ public:
 			f.commit_id = item["commit_id"];
 			f.name = item["name"];
 			f.id = item["id"];
-			f.size = std::stoull(item["size"].get<std::string>().c_str());
 			f.server_path = file_server_path;
 			if (!f.is_directory)
 			{
+				f.size = std::stoull(item["size"].get<std::string>().c_str());
 				f.md5 = item["md5"].get<std::string>().substr(0, 32);
 			}
 			files.push_back(f);
