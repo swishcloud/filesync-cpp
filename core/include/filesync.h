@@ -152,6 +152,7 @@ public:
 	std::string commit_id;
 	std::string name;
 	std::string md5;
+	size_t size;
 	bool is_directory;
 };
 class filesync::ServerFile
@@ -440,6 +441,7 @@ public:
 			f.commit_id = item["commit_id"];
 			f.name = item["name"];
 			f.id = item["id"];
+			f.size = std::stoull(item["size"].get<std::string>().c_str());
 			f.server_path = file_server_path;
 			if (!f.is_directory)
 			{
