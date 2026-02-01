@@ -877,8 +877,10 @@ private:
             "  deleted = 0, "
             "  deleted_at_ms = 0, "
             "  conflict = 0, "
-            "  updated_at_ms = (unixepoch()*1000) "
-            "WHERE id = ?7;";
+            "  updated_at_ms = (unixepoch()*1000), "
+            "  server_parent_id_snapshot = ?7, "
+            "  server_name_snapshot = ?8 "
+            "WHERE id = ?9;";
 
         const char *sql_child =
             "UPDATE items SET "
@@ -892,8 +894,10 @@ private:
             "  deleted = 0, "
             "  deleted_at_ms = 0, "
             "  conflict = 0, "
-            "  updated_at_ms = (unixepoch()*1000) "
-            "WHERE id = ?8;";
+            "  updated_at_ms = (unixepoch()*1000), "
+            "  server_parent_id_snapshot = ?8, "
+            "  server_name_snapshot = ?9 "
+            "WHERE id = ?10;";
 
         if (!parentLocalOpt)
         {
@@ -904,7 +908,9 @@ private:
             bindInt64(u.get(), 4, mtimeMs);
             bindText(u.get(), 5, serverRev);
             bindInt64(u.get(), 6, mtimeMs);
-            bindText(u.get(), 7, localId);
+            bindText(u.get(), 7, parentServerFileId);
+            bindText(u.get(), 8, name);
+            bindText(u.get(), 9, localId);
             stepMustDone(u.get(), "upsertFromServer(update root)");
         }
         else
@@ -917,7 +923,9 @@ private:
             bindInt64(u.get(), 5, mtimeMs);
             bindText(u.get(), 6, serverRev);
             bindInt64(u.get(), 7, mtimeMs);
-            bindText(u.get(), 8, localId);
+            bindText(u.get(), 8, parentServerFileId);
+            bindText(u.get(), 9, name);
+            bindText(u.get(), 10, localId);
             stepMustDone(u.get(), "upsertFromServer(update child)");
         }
 

@@ -14,6 +14,7 @@ namespace filesync
     class action_base
     {
     public:
+        virtual ~action_base() = default;
         int type;
         virtual json to_json() = 0;
     };
@@ -58,6 +59,7 @@ namespace filesync
     {
         char *id;
         char *destinationPath;
+        char *newName;
 
     public:
         move_action();

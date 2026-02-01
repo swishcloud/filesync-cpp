@@ -522,7 +522,7 @@ json filesync::delete_by_path_action::to_json()
 	return j;
 }
 
-filesync::move_action::move_action()
+filesync::move_action::move_action() : id(NULL), destinationPath(NULL), newName(NULL)
 {
 	this->type = 4;
 }
@@ -535,6 +535,7 @@ filesync::move_action::~move_action()
 {
 	delete[] (this->id);
 	delete[] (this->destinationPath);
+	delete[] (this->newName);
 
 	this->id = NULL;
 	this->destinationPath = NULL;
@@ -553,6 +554,7 @@ json filesync::move_action::to_json()
 	json j;
 	j["id"] = this->id;
 	j["destinationPath"] = this->destinationPath;
+	j["newName"] = this->newName;
 	return j;
 }
 
