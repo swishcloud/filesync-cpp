@@ -222,6 +222,7 @@ public:
             "    deleted            INTEGER NOT NULL DEFAULT 0,"
             "    deleted_at_ms      INTEGER NOT NULL DEFAULT 0,"
             "    server_rev         TEXT,"
+            "    server_md5         TEXT,"
             "    local_server_rev   TEXT,"
             "    server_mtime_ms    INTEGER NOT NULL DEFAULT 0,"
             "    server_parent_id_snapshot TEXT NULL,"

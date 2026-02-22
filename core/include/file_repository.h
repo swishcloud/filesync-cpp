@@ -45,6 +45,7 @@ struct FileItem
     bool is_deleted = false;
     bool isDirty = false;
     std::string serverRev; // server revision / etag / version
+    std::string serverMd5;
     std::string localServerRev;
     std::string server_parent_id_snapshot;
     std::string server_name_snapshot;
@@ -77,12 +78,13 @@ public:
     virtual void clearDirty(const std::string &id) = 0;
     virtual void upsertFromServer(
         const std::string &serverFileId,
-        const std::string &parentServerFileId, // empty => root
+        const std::string &parentServerFileId,
         const std::string &name,
         bool isDir,
         std::int64_t size,
         std::int64_t mtimeMs,
-        const std::string &serverRev) = 0;
+        const std::string &serverRev,
+        const std::string &serverMd5) = 0;
 
     virtual void applyServerDelete(const std::string &serverFileId) = 0;
 
@@ -170,14 +172,14 @@ public:
     {
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id IS NULL AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE parent_id = ?1 AND deleted = 0 "
             "ORDER BY is_dir DESC, name ASC;";
@@ -200,7 +202,7 @@ public:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline ,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline ,server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items WHERE id = ?1;";
 
         Stmt stmt(db_, sql);
@@ -559,14 +561,15 @@ private:
         it.pinnedOffline = sqlite3_column_int(st, 9) != 0;
 
         it.serverRev = colTextOrEmpty(st, 10);
-        it.localServerRev = colTextOrEmpty(st, 11);
+        it.serverMd5 = colTextOrEmpty(st, 11);
+        it.localServerRev = colTextOrEmpty(st, 12);
 
-        it.is_deleted = sqlite3_column_int(st, 12);
-        it.isDirty = sqlite3_column_int(st, 13);
-        it.server_parent_id_snapshot = colTextOrEmpty(st, 14);
-        it.server_name_snapshot = colTextOrEmpty(st, 15);
+        it.is_deleted = sqlite3_column_int(st, 13);
+        it.isDirty = sqlite3_column_int(st, 14);
+        it.server_parent_id_snapshot = colTextOrEmpty(st, 15);
+        it.server_name_snapshot = colTextOrEmpty(st, 16);
 
-        it.syncStage = static_cast<SyncStage>(sqlite3_column_int(st, 16));
+        it.syncStage = static_cast<SyncStage>(sqlite3_column_int(st, 17));
         return it;
     }
 
@@ -606,7 +609,7 @@ private:
     {
         const char *sql =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline,server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline,server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE dirty = 1 "
             "ORDER BY "
@@ -681,7 +684,7 @@ private:
 
         const char *sql_root =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline, server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id IS NULL "
@@ -690,7 +693,7 @@ private:
 
         const char *sql_child =
             "SELECT id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
-            "       local_path, is_placeholder, pinned_offline, server_rev,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
+            "       local_path, is_placeholder, pinned_offline, server_rev,server_md5,local_server_rev,deleted,dirty,server_parent_id_snapshot,server_name_snapshot,sync_stage "
             "FROM items "
             "WHERE deleted = 0 "
             "  AND parent_id = ?1 "
@@ -744,14 +747,17 @@ private:
         bool isDir,
         std::int64_t size,
         std::int64_t mtimeMs,
-        const std::string &serverRev) override
+        const std::string &serverRev,
+        const std::string &serverMd5) override
     {
         const auto localIdOpt = getLocalIdByServerId(serverFileId);
         const auto parentLocalOpt = getParentLocalIdFromParentServerId(parentServerFileId);
 
+        // =========================
+        // INSERT
+        // =========================
         if (!localIdOpt)
         {
-            // INSERT
             const std::string newLocalId = uuidGen_.newUuid();
 
             const char *sql_root =
@@ -759,17 +765,17 @@ private:
                 "  id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
                 "  local_path, is_placeholder, pinned_offline, "
                 "  deleted, deleted_at_ms, "
-                "  server_rev, server_mtime_ms, "
+                "  server_rev,server_md5, server_md5, server_mtime_ms, "
                 "  dirty, sync_stage, inflight_op_id, inflight_since_ms, last_error, retry_count, conflict, "
-                "  created_at_ms, updated_at_ms,server_parent_id_snapshot,server_name_snapshot"
+                "  created_at_ms, updated_at_ms, server_parent_id_snapshot, server_name_snapshot"
                 ") VALUES ("
                 "  ?1, ?2, NULL, ?3, ?4, ?5, ?6, "
                 "  '', 1, 0, "
                 "  0, 0, "
-                "  ?7, ?8, "
+                "  ?7, ?8, ?9, "
                 "  0, 0, NULL, 0, '', 0, 0, "
                 "  (unixepoch()*1000), (unixepoch()*1000), "
-                "  ?9, ?10 "
+                "  ?10, ?11 "
                 ");";
 
             const char *sql_child =
@@ -777,17 +783,17 @@ private:
                 "  id, server_file_id, parent_id, name, is_dir, size, mtime_ms, "
                 "  local_path, is_placeholder, pinned_offline, "
                 "  deleted, deleted_at_ms, "
-                "  server_rev, server_mtime_ms, "
+                "  server_rev, server_md5,server_md5, server_mtime_ms, "
                 "  dirty, sync_stage, inflight_op_id, inflight_since_ms, last_error, retry_count, conflict, "
-                "  created_at_ms, updated_at_ms,server_parent_id_snapshot,server_name_snapshot"
+                "  created_at_ms, updated_at_ms, server_parent_id_snapshot, server_name_snapshot"
                 ") VALUES ("
                 "  ?1, ?2, ?3, ?4, ?5, ?6, ?7, "
                 "  '', 1, 0, "
                 "  0, 0, "
-                "  ?8, ?9, "
+                "  ?8, ?9, ?10, "
                 "  0, 0, NULL, 0, '', 0, 0, "
                 "  (unixepoch()*1000), (unixepoch()*1000), "
-                "  ?10, ?11 "
+                "  ?11, ?12 "
                 ");";
 
             if (!parentLocalOpt)
@@ -800,9 +806,10 @@ private:
                 bindInt64(stmt.get(), 5, size);
                 bindInt64(stmt.get(), 6, mtimeMs);
                 bindText(stmt.get(), 7, serverRev);
-                bindInt64(stmt.get(), 8, mtimeMs);
-                bindText(stmt.get(), 9, parentServerFileId);
-                bindText(stmt.get(), 10, name);
+                bindText(stmt.get(), 8, serverMd5);
+                bindInt64(stmt.get(), 9, mtimeMs);
+                bindText(stmt.get(), 10, parentServerFileId);
+                bindText(stmt.get(), 11, name);
                 stepMustDone(stmt.get(), "upsertFromServer(insert root)");
             }
             else
@@ -816,28 +823,28 @@ private:
                 bindInt64(stmt.get(), 6, size);
                 bindInt64(stmt.get(), 7, mtimeMs);
                 bindText(stmt.get(), 8, serverRev);
-                bindInt64(stmt.get(), 9, mtimeMs);
-                bindText(stmt.get(), 10, parentServerFileId);
-                bindText(stmt.get(), 11, name);
+                bindText(stmt.get(), 9, serverMd5);
+                bindInt64(stmt.get(), 10, mtimeMs);
+                bindText(stmt.get(), 11, parentServerFileId);
+                bindText(stmt.get(), 12, name);
                 stepMustDone(stmt.get(), "upsertFromServer(insert child)");
             }
             return;
         }
 
-        // UPDATE existing
         const std::string &localId = *localIdOpt;
 
-        // If local dirty=1, we should not stomp local intent; mark conflict and only update server_* fields.
+        // =========================
+        // CHECK DIRTY (conflict)
+        // =========================
         {
             const char *sqlDirty = "SELECT dirty FROM items WHERE id = ?1;";
             Stmt stmt(db_, sqlDirty);
             bindText(stmt.get(), 1, localId);
 
-            int rc = sqlite3_step(stmt.get());
-            if (rc != SQLITE_ROW)
-            {
+            if (sqlite3_step(stmt.get()) != SQLITE_ROW)
                 throw std::runtime_error("upsertFromServer(update): local row disappeared");
-            }
+
             const bool localDirty = sqlite3_column_int(stmt.get(), 0) != 0;
 
             if (localDirty)
@@ -845,26 +852,30 @@ private:
                 const char *sql =
                     "UPDATE items SET "
                     "  server_rev = ?1, "
-                    "  server_mtime_ms = ?2, "
+                    "  server_md5 = ?2, "
+                    "  server_mtime_ms = ?3, "
                     "  conflict = 1, "
                     "  updated_at_ms = (unixepoch()*1000), "
-                    "  server_parent_id_snapshot = ?3, "
-                    "  server_name_snapshot = ?4 "
-                    "WHERE id = ?5;";
+                    "  server_parent_id_snapshot = ?4, "
+                    "  server_name_snapshot = ?5 "
+                    "WHERE id = ?6;";
 
                 Stmt u(db_, sql);
                 bindText(u.get(), 1, serverRev);
-                bindInt64(u.get(), 2, mtimeMs);
-                bindText(u.get(), 3, parentServerFileId);
-                bindText(u.get(), 4, name);
-                bindText(u.get(), 5, localId);
-                stepMustDone(u.get(), "upsertFromServer(update dirty=1 => conflict)");
+                bindText(u.get(), 2, serverMd5);
+                bindInt64(u.get(), 3, mtimeMs);
+                bindText(u.get(), 4, parentServerFileId);
+                bindText(u.get(), 5, name);
+                bindText(u.get(), 6, localId);
+                stepMustDone(u.get(), "upsertFromServer(update conflict)");
                 ensureChanged("upsertFromServer(update conflict)");
                 return;
             }
         }
 
-        // Local clean => apply server truth fully
+        // =========================
+        // CLEAN → FULL UPDATE
+        // =========================
         const char *sql_root =
             "UPDATE items SET "
             "  parent_id = NULL, "
@@ -873,23 +884,7 @@ private:
             "  size = ?3, "
             "  mtime_ms = ?4, "
             "  server_rev = ?5, "
-            "  server_mtime_ms = ?6, "
-            "  deleted = 0, "
-            "  deleted_at_ms = 0, "
-            "  conflict = 0, "
-            "  updated_at_ms = (unixepoch()*1000), "
-            "  server_parent_id_snapshot = ?7, "
-            "  server_name_snapshot = ?8 "
-            "WHERE id = ?9;";
-
-        const char *sql_child =
-            "UPDATE items SET "
-            "  parent_id = ?1, "
-            "  name = ?2, "
-            "  is_dir = ?3, "
-            "  size = ?4, "
-            "  mtime_ms = ?5, "
-            "  server_rev = ?6, "
+            "  server_md5 = ?6, "
             "  server_mtime_ms = ?7, "
             "  deleted = 0, "
             "  deleted_at_ms = 0, "
@@ -899,6 +894,24 @@ private:
             "  server_name_snapshot = ?9 "
             "WHERE id = ?10;";
 
+        const char *sql_child =
+            "UPDATE items SET "
+            "  parent_id = ?1, "
+            "  name = ?2, "
+            "  is_dir = ?3, "
+            "  size = ?4, "
+            "  mtime_ms = ?5, "
+            "  server_rev = ?6, "
+            "  server_md5 = ?7, "
+            "  server_mtime_ms = ?8, "
+            "  deleted = 0, "
+            "  deleted_at_ms = 0, "
+            "  conflict = 0, "
+            "  updated_at_ms = (unixepoch()*1000), "
+            "  server_parent_id_snapshot = ?9, "
+            "  server_name_snapshot = ?10 "
+            "WHERE id = ?11;";
+
         if (!parentLocalOpt)
         {
             Stmt u(db_, sql_root);
@@ -907,10 +920,11 @@ private:
             bindInt64(u.get(), 3, size);
             bindInt64(u.get(), 4, mtimeMs);
             bindText(u.get(), 5, serverRev);
-            bindInt64(u.get(), 6, mtimeMs);
-            bindText(u.get(), 7, parentServerFileId);
-            bindText(u.get(), 8, name);
-            bindText(u.get(), 9, localId);
+            bindText(u.get(), 6, serverMd5);
+            bindInt64(u.get(), 7, mtimeMs);
+            bindText(u.get(), 8, parentServerFileId);
+            bindText(u.get(), 9, name);
+            bindText(u.get(), 10, localId);
             stepMustDone(u.get(), "upsertFromServer(update root)");
         }
         else
@@ -922,15 +936,17 @@ private:
             bindInt64(u.get(), 4, size);
             bindInt64(u.get(), 5, mtimeMs);
             bindText(u.get(), 6, serverRev);
-            bindInt64(u.get(), 7, mtimeMs);
-            bindText(u.get(), 8, parentServerFileId);
-            bindText(u.get(), 9, name);
-            bindText(u.get(), 10, localId);
+            bindText(u.get(), 7, serverMd5);
+            bindInt64(u.get(), 8, mtimeMs);
+            bindText(u.get(), 9, parentServerFileId);
+            bindText(u.get(), 10, name);
+            bindText(u.get(), 11, localId);
             stepMustDone(u.get(), "upsertFromServer(update child)");
         }
 
         ensureChanged("upsertFromServer(update)");
     }
+
     void applyServerDelete(const std::string &serverFileId) override
     {
         const auto localIdOpt = getLocalIdByServerId(serverFileId);
@@ -1021,12 +1037,13 @@ private:
             is_placeholder,          -- 8
             pinned_offline,          -- 9
             server_rev,              -- 10
-            local_server_rev,        -- 11
-            deleted,                 -- 12
-            dirty,                   -- 13
-            server_parent_id_snapshot,-- 14
-            server_name_snapshot,    -- 15
-            sync_stage               -- 16
+            server_md5,
+            local_server_rev,     
+            deleted,                 
+            dirty,                  
+            server_parent_id_snapshot,
+            server_name_snapshot,   
+            sync_stage               
         FROM items
         WHERE deleted = 0
           AND is_dir = 0
