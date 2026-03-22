@@ -11,6 +11,8 @@ namespace filesync
 	const int GET_SERVER_FILES_RETRY_MAX_TIMES = 10;
 #ifdef __linux__
 	const std::filesystem::path datapath = "/var/FILESYNC";
+#elifdef __APPLE__
+	const std::filesystem::path datapath = "";
 #else
 	const std::filesystem::path datapath = std::string(getenv("APPDATA")) + "/FILESYNC";
 #endif

@@ -35,19 +35,28 @@ namespace filesync
 		std::string Dump();
 	};
 
-	class ChangeCommitter
+	class IChangeCommitter
+	{
+	public:
+		virtual ~IChangeCommitter() = default;
+		virtual IChangeCommitter *add_action(PATH path, action_base *action) = 0;
+		virtual bool commit(std::string token) = 0;
+	};
+	class ChangeCommitter : public IChangeCommitter
 	{
 	private:
 		std::unique_ptr<PathNode> actionTreeRoot;
-		FileSync &fs;
+		// FileSync &fs;
+		const std::string server_ip;
+		const int port;
 
 	public:
-		ChangeCommitter(FileSync &fs);
+		ChangeCommitter(const std::string &server_ip, const int &port);
 		~ChangeCommitter();
-		ChangeCommitter *add_action(PATH path, action_base *action);
+		IChangeCommitter *add_action(PATH path, action_base *action);
 		void clear();
 		bool commit(std::string token = std::string{});
 		void Dump();
-	};
-} // namespace filesync
+	}; // namespace filesync
+}
 #endif

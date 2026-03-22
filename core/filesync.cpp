@@ -960,8 +960,10 @@ common::error filesync::FileSync::check_sync_path()
 	assert(this->monitor == NULL);
 #ifdef __linux__
 	this->monitor = new common::monitor::linux_monitor();
-#else
+#elif _WIN32
 	this->monitor = new common::monitor::win_monitor(this->conf.sync_path.string());
+#else
+#warning "Monitor not supported on this platform"
 #endif
 	monitor->watch(this->conf.sync_path.string());
 	monitor->read_async(&filesync::FileSync::monitor_cb, this);
@@ -1023,7 +1025,7 @@ filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 	this->server_location = server_location;
 	this->logger = new Logger();
 	this->db = new filesync::db_manager{this->logger};
-	this->committer = new ChangeCommitter(*this);
+	this->committer = new ChangeCommitter(cfg.server_ip, cfg.server_port);
 	this->monitor = NULL;
 	this->_tcp_client = NULL;
 	this->corret_path_sepatator(this->server_location);
@@ -1114,9 +1116,7 @@ std::filesystem::path filesync::FileSync::relative_to_server_path(std::string re
 }
 std::string filesync::FileSync::get_token(std::string account)
 {
-#ifdef __linux__
-
-#endif
+#ifndef __APPLE__
 	auto token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", account.c_str())).string();
 	auto cmd = common::string_format("filesync-go login --insecure --token_path \"%s\"", token_file_path.c_str());
 	if (this->cfg.debug_mode)
@@ -1133,6 +1133,8 @@ std::string filesync::FileSync::get_token(std::string account)
 		return m[1].str();
 	}
 	return std::string();
+
+#endif
 }
 filesync::File filesync::FileSync::local_file(std::string full_path, bool is_directory)
 {

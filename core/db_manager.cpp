@@ -15,7 +15,7 @@ filesync::db_manager::~db_manager()
 {
 	delete[] (this->db_file_name);
 	delete logger;
-	// delete (this->db);free(): invalid pointer
+	//  delete (this->db);free(): invalid pointer
 }
 int filesync::db_manager::sqlite_callback(void *result, int n, char **value, char **column)
 {
@@ -525,5 +525,49 @@ json filesync::delete_by_path_action::to_json()
 	j["path"] = this->path;
 	j["commit_id"] = this->commit_id;
 	j["file_type"] = this->file_type;
+	return j;
+}
+
+filesync::move_action::move_action() : id(NULL), destinationPath(NULL), newName(NULL)
+{
+	this->type = 4;
+}
+filesync::rename_action::rename_action()
+{
+	this->type = 5;
+}
+
+filesync::move_action::~move_action()
+{
+	delete[] (this->id);
+	delete[] (this->destinationPath);
+	delete[] (this->newName);
+
+	this->id = NULL;
+	this->destinationPath = NULL;
+}
+filesync::rename_action::~rename_action()
+{
+	delete[] (this->id);
+	delete[] (this->newName);
+
+	this->id = NULL;
+	this->newName = NULL;
+}
+
+json filesync::move_action::to_json()
+{
+	json j;
+	j["id"] = this->id;
+	j["destinationPath"] = this->destinationPath;
+	j["newName"] = this->newName;
+	return j;
+}
+
+json filesync::rename_action::to_json()
+{
+	json j;
+	j["id"] = this->id;
+	j["newName"] = this->newName;
 	return j;
 }
