@@ -21,21 +21,21 @@ namespace filesync
                                                              }
                                                              else
                                                              {
-                                                                 common::print_debug(common::string_format("Error processing message:%s,closing this session...", error.message()));
-                                                                 session->close();
+                                                                 common::print_debug(common::string_format("Error processing message:%s", error.message()));
                                                              }
                                                          });
                                }
                                else
                                {
-                                   common::print_debug(common::string_format("Error reading message:%s,closing this session...", error.message()));
-                                   session->close();
+                                   common::print_debug(common::string_format("Error reading message:%s.", error.message()));
                                } });
     }
     server::server(short port, std::string file_location, common::http_client &http_client) : tcp_server{port}, ip{"0.0.0.0"}, port{port}, file_location{file_location}, http_client{http_client}
     {
         tcp_server.on_accepted = [this](XTCP::tcp_session *session, XTCP::tcp_server *server)
         {
+            session->on_closed.subscribe([server](XTCP::tcp_session *s)
+                                         { server->remove_session(s); });
             session->timeout = 60 * 5;
             filesync::print_info("accepted a client connection.");
             receive(session);
