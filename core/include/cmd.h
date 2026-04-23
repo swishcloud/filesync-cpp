@@ -3,6 +3,7 @@
 class CMDBase
 {
 public:
+    virtual ~CMDBase() = default;
     virtual void reg(CLI::App *parent) = 0;
 
 private:
@@ -29,4 +30,15 @@ private:
     void callback();
     void addRunCmd(CLI::App *parent);
     void addConfigureCmd(CLI::App *parent);
+};
+
+class DownloadCMD : public CMDBase
+{
+public:
+    void reg(CLI::App *parent);
+
+private:
+    std::string serverIP;
+    int port;
+    void callback();
 };

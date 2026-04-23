@@ -13,6 +13,7 @@
 #include <change_committer.h>
 #include <cfg.h>
 #include <memory>
+#include <commotion/client/client.h>
 #include <internal.h>
 #include <monitor.h>
 #include <queue>
@@ -38,6 +39,7 @@ namespace filesync
 	class tcp_client;
 	struct File;
 	class ServerFile;
+
 	struct FSConnectResult;
 	// CMD STRUCTURE
 	struct CMD_EXPORT_OPTION
@@ -59,13 +61,72 @@ namespace filesync
 		std::string filename;
 		filesync::PATH path;
 		std::string md5;
+		std::string sha256;
 		std::string token;
 		std::string account;
 		filesync::PATH location;
 		size_t size;
+		std::string serverIP;
+		int port;
 	};
 	int run(int argc, const char *argv[]);
+	// Overload operator<<
+	std::ostream &operator<<(std::ostream &os, const ServerFile &file);
+
 } // namespace filesync
+
+class IWebAPI
+{
+public:
+	virtual ~IWebAPI() = default;
+	virtual std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision) = 0;
+	virtual filesync::ServerFile get_file_info(const std::string &md5, const size_t &size) = 0;
+};
+class FS_CLIENT
+{
+private:
+	IWebAPI *webapi;
+	::CLIENT client;
+	std::condition_variable cv;
+	std::mutex m;
+	std::string serverId;
+	bool downloaded = false;
+
+public:
+	FS_CLIENT(IWebAPI *webapi, const std::string &serverIP, const int &serverPort, const std::string &serverId) : webapi(webapi), client(serverIP, serverPort), serverId(serverId)
+	{
+	}
+	~FS_CLIENT()
+	{
+		delete webapi;
+	}
+	void OnFileDownloaded()
+	{
+		common::print_debug("file downloaded callback");
+		downloaded = true;
+		cv.notify_one();
+	}
+	int login()
+	{
+		if (!client.connect() || !client.login("xx", "xx"))
+		{
+			std::cout << "failed to login in" << std::endl;
+			return 0;
+		}
+		return 1;
+	}
+	void Upload(std::shared_ptr<std::istream> fs, const char *md5, size_t size, std::string token);
+	void DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
+	{
+		client._file_downloaded_cb = std::function<void()>([this]()
+														   { this->OnFileDownloaded(); });
+		client.requestFile(serverId.c_str(), server_path.c_str(), save_path.c_str());
+		std::unique_lock<std::mutex> lock(m);
+		cv.wait(lock, [this]()
+				{ return downloaded; });
+		std::cout << "file downloaded" << std::endl;
+	};
+};
 class filesync::FileSync
 {
 private:
@@ -171,6 +232,39 @@ public:
 	std::string server_file_id;
 	bool is_completed;
 };
+inline void FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const char *md5, size_t size, std::string token)
+{
+	filesync::ServerFile sf = webapi->get_file_info(md5, size);
+	std::cout << "file info: \n"
+			  << sf << std::endl;
+	//  client.uploadFile(serverId.c_str(), *fs, sha256, size);
+	client.getUploadStreamCB = [&](const std::string &path, std::istream **is, std::string &_sha256,
+								   size_t &_size)
+	{
+		*is = fs.get();
+		_sha256 = md5;
+		_size = size;
+	};
+	int res = client.sendFile(serverId.c_str(), "-");
+	std::cout << "uploading file " << (res ? "success" : "failed") << std::endl;
+	// client.sendMessage(MT_RecordFile, {{"token", token}});
+}
+// Overload operator<<
+inline std::ostream &filesync::operator<<(std::ostream &os, const filesync::ServerFile &file)
+{
+	os << "ServerFile {\n"
+	   << "  name: " << file.name << "\n"
+	   << "  is_directory: " << std::boolalpha << file.is_directory << "\n"
+	   << "  md5: " << file.md5 << "\n"
+	   << "  size: " << file.size << "\n"
+	   << "  uploaded_size: " << file.uploaded_size << "\n"
+	   << "  commit_id: " << file.commit_id << "\n"
+	   << "  path: " << file.path << "\n"
+	   << "  server_file_id: " << file.server_file_id << "\n"
+	   << "  is_completed: " << std::boolalpha << file.is_completed << "\n"
+	   << "}";
+	return os;
+}
 class filesync::FSConnectResult
 {
 public:
@@ -298,11 +392,38 @@ public:
 		}
 	}
 };
+class FileUploader2 : public IFileUploader
+{
+public:
+	FileUploader2(std::shared_ptr<FS_CLIENT> &client) : client(client) {}
+
+private:
+	std::shared_ptr<FS_CLIENT> client;
+	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const sha256, const size_t &size, const std::string &token)
+	{
+		client->Upload(fs, sha256, size, token);
+		return true;
+	}
+};
 class IFileDownloader
 {
 public:
 	virtual ~IFileDownloader() = default;
 	virtual void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token) = 0;
+};
+class FileDownloader2 : public IFileDownloader
+{
+private:
+	std::shared_ptr<FS_CLIENT> client;
+
+public:
+	FileDownloader2(std::shared_ptr<FS_CLIENT> &client) : client(client)
+	{
+	}
+	void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
+	{
+		client->DownloadFile(server_path, commit_id, save_path, token);
+	}
 };
 class FileDownloader : public IFileDownloader
 {
@@ -393,13 +514,6 @@ public:
 		}
 	}
 };
-class IWebAPI
-{
-public:
-	virtual ~IWebAPI() = default;
-	virtual std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision) = 0;
-	virtual filesync::ServerFile get_file_info(const std::string &md5, const size_t &size) = 0;
-};
 class WebAPI : public IWebAPI
 {
 private:
@@ -486,5 +600,15 @@ public:
 	virtual nlohmann::json load() = 0; // empty json {} if none / parse fail
 	virtual void clear() = 0;
 };
-
+inline std::string getServerId()
+{
+	std::string targetId = "60B62C1708BE42A1AFAD633E779EC4E3";
+	char id[16];
+	for (int i = targetId.size() - 2; i >= 0; i -= 2)
+	{
+		id[i / 2] = std::stoi(targetId.c_str() + i, NULL, 16);
+		targetId.data()[i] = 0;
+	}
+	return id;
+}
 #endif

@@ -18,7 +18,11 @@ void begin_listen(std::string listen_port, std::string files_path)
 #else
     filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
 #endif
-    s.listen();
+    int port = std::stoi(listen_port);
+    filesync::SERVER server(port);
+    filesync::CLIENT client("127.0.0.1", port);
+    client.connect();
+    server.listen();
 
     filesync::print_info("exited.");
 }
@@ -192,6 +196,41 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
 }
 void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 {
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    std::string token;
+    std::string maxid;
+    std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
+    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid), cfg.server_ip, cfg.server_tcp_port, getServerId());
+    if (!client->login())
+    {
+        std::cout << "login failed" << std::endl;
+        return;
+    }
+    IFileUploader *uploader = new FileUploader2(client);
+    filesync::ServerFile sf;
+    std::shared_ptr<std::ifstream> fs;
+    std::string sha256;
+    size_t size;
+    if (!common::file_exist(opt.path.string().c_str()))
+    {
+        std::cout << "can't find file:" << opt.path.string() << std::endl;
+        goto exit;
+    }
+    fs = std::make_shared<std::ifstream>(opt.path.string(), std::ios_base::binary);
+    sha256 = common::file_sha256(opt.path.string().c_str());
+    size = common::file_size(opt.path.string());
+    uploader->upload_file(sf, fs, sha256.c_str(), size, "token");
+exit:
+    delete uploader;
+}
+void begin_upload2(filesync::CMD_UPLOAD_OPTION opt)
+{
     common::print_info(common::string_format("md5:%s location:%s", opt.md5.c_str(), opt.location.string().c_str()));
     /*std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     for (std::string line; std::getline(std::cin, line);)
@@ -297,8 +336,11 @@ void CMD_UPLOAD(CLI::App *parent)
     auto upload_cmd = parent->add_subcommand("upload", "upload a file");
     auto opt = std::shared_ptr<filesync::CMD_UPLOAD_OPTION>{new filesync::CMD_UPLOAD_OPTION};
     opt->size = SIZE_MAX;
+    upload_cmd->add_option("--serverIP", opt->serverIP, "the server IP")->required();
+    upload_cmd->add_option("--port", opt->port, "the server port")->required();
     upload_cmd->add_option("--filename", opt->filename, "the filename to save on server");
     upload_cmd->add_option("--md5", opt->md5, "the md5 of file to upload");
+    upload_cmd->add_option("--sha256", opt->md5, "the sha256 of file to upload");
     upload_cmd->add_option("--location", opt->location, "the server path where save the uploaded file")->required();
     upload_cmd->add_option("--token", opt->token);
     upload_cmd->add_option("--account", opt->account);
@@ -325,10 +367,42 @@ int filesync::run(int argc, const char *argv[])
     std::vector<std::unique_ptr<CMDBase>> cmds;
     cmds.push_back(std::unique_ptr<CMDBase>{new LoginCMD()});
     cmds.push_back(std::unique_ptr<CMDBase>{new SyncCMD()});
+    cmds.push_back(std::unique_ptr<CMDBase>{new DownloadCMD()});
     for (auto &cmd : cmds)
     {
         cmd->reg(&app);
     }
     CLI11_PARSE(app, argc, argv);
     return exit_code;
+}
+void DownloadCMD::reg(CLI::App *parent)
+{
+    auto download = parent->add_subcommand("download", "download file from server");
+    download->add_option("--serverIP", serverIP, "the server IP")->required();
+    download->add_option("--port", port, "the server port")->required();
+    download->callback([this]()
+                       { callback(); });
+}
+void DownloadCMD::callback()
+{
+    common::print_debug("download callback");
+
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    std::string token;
+    std::string maxid;
+    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid), serverIP, port, getServerId());
+    if (!client->login())
+    {
+        std::cout << "login failed" << std::endl;
+        return;
+    }
+    IFileDownloader *downloader = new FileDownloader2(client);
+    downloader->download_file("/test/test.txt", "commit_id", "save_path", "token");
+    delete downloader;
 }

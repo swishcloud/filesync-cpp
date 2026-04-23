@@ -41,11 +41,19 @@ namespace filesync
     };
     void EXCEPTION(std::string err);
     void PLATFORM_NOT_SUPPORTED();
-    class UuidGenerator:public IUuidGenerator {
-public:
-    std::string newUuid(){
-        return common::uuid();
-    }
-};
+    class UuidGenerator : public IUuidGenerator
+    {
+    public:
+        std::string newUuid()
+        {
+            return common::uuid();
+        }
+    };
+
+    typedef enum
+    {
+        MT_PrepareFile = 1000 + 1,
+        MT_RecordFile
+    } MsgType;
 } // namespace filesync
 #endif

@@ -15,6 +15,9 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <commotion/core/core.h>
+#include <commotion/server/server.h>
+#include <commotion/client/client.h>
 using namespace nlohmann;
 using boost::asio::ip::tcp;
 #define TokenHeaderKey "access_token"
@@ -67,6 +70,27 @@ namespace filesync
         ~tcp_client();
         bool connect();
         void send_file(std::string path, size_t offset = 0);
+    };
+    class SERVER
+    {
+    private:
+        SERVER_NS::SERVER server;
+
+    public:
+        SERVER(const int &port);
+        void listen();
+    };
+    class CLIENT
+    {
+    public:
+        ~CLIENT();
+        CLIENT(const std::string &server_host, const int &server_port);
+        void connect();
+
+    private:
+        ::CLIENT client;
+        bool canConnect = true;
+        std::thread th;
     };
 } // namespace filesync
 #endif
