@@ -52,7 +52,7 @@ namespace filesync
 
     typedef enum
     {
-        MT_PrepareFile = 1000 + 1,
+        MT_PrepareFile = 50 + 1,
         MT_RecordFile
     } MsgType;
 } // namespace filesync
