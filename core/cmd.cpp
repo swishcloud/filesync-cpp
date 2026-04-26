@@ -196,37 +196,120 @@ void begin_server_clean(filesync::CMD_SERVER_CLEAN_OPTION opt)
 }
 void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 {
+    filesync::IChangeCommitter *committer = NULL;
+    IWebAPI *api = NULL;
+    IFileUploader *uploader = NULL;
+    bool upload_ok = false;
+    std::shared_ptr<std::istream> fs;
     filesync::CONFIG cfg;
-    auto err = cfg.load();
-    if (err)
-    {
-        filesync::print_info(err.message());
-        return;
-    }
     std::string token;
     std::string maxid;
+    size_t size;
+    filesync::ServerFile sf;
+    std::shared_ptr<FS_CLIENT> client;
+    common::error err;
+    if (opt.account.empty() && opt.token.empty())
+    {
+        common::print_info("at least one of the parameters account and token is required");
+        goto exit;
+    }
+    common::print_info(common::string_format("md5:%s location:%s", opt.md5.c_str(), opt.location.string().c_str()));
+    /*std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    for (std::string line; std::getline(std::cin, line);)
+    {
+        common::print_info(line);
+    }*/
+    if (!opt.path.string().empty())
+    {
+        if (opt.size != SIZE_MAX)
+        {
+            common::print_info(std::string("parameter PATH and parameter SIZE can not be used together."));
+            goto exit;
+        }
+        opt.md5 = common::file_md5(opt.path.string().c_str());
+        opt.size = common::file_size(opt.path.string().c_str());
+        if (opt.filename.empty())
+        {
+            opt.filename = filesync::file_name(opt.path.string().c_str());
+        }
+        fs.reset(new std::ifstream(opt.path.string()));
+        if (!*fs)
+        {
+            common::print_info(std::string("Faild to open file ") + opt.path.string());
+
+            goto exit;
+        }
+    }
+    else
+    {
+        if (opt.size == SIZE_MAX)
+        {
+            common::print_info(std::string("please specify the parameter SIZE."));
+
+            goto exit;
+        }
+        if (opt.md5.empty())
+        {
+            common::print_info(std::string("please specify the parameter MD5 when PATH not specified."));
+
+            goto exit;
+        }
+        fs = std::shared_ptr<std::istream>{&std::cin, [](void *) {}};
+        if (opt.filename.empty())
+        {
+            common::print_info("missing filename parameter");
+
+            goto exit;
+        }
+    }
+    err = cfg.load();
+    if (cfg.load())
+    {
+        filesync::print_info(err.message());
+
+        goto exit;
+    }
+    token = getToken(opt.account, cfg.debug_mode);
     std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
-    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid), cfg.server_ip, cfg.server_tcp_port, getServerId());
+
+    api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid);
+    size = common::file_size(opt.path.string());
+    if (!api->get_file_info(opt.md5, size, sf))
+    {
+        common::print_debug("Failed to get file info");
+
+        goto exit;
+    }
+    std::cout << "file info: \n"
+              << sf << std::endl;
+    client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
     if (!client->login())
     {
         std::cout << "login failed" << std::endl;
-        return;
-    }
-    IFileUploader *uploader = new FileUploader2(client);
-    filesync::ServerFile sf;
-    std::shared_ptr<std::ifstream> fs;
-    std::string sha256;
-    size_t size;
-    if (!common::file_exist(opt.path.string().c_str()))
-    {
-        std::cout << "can't find file:" << opt.path.string() << std::endl;
+
         goto exit;
     }
-    fs = std::make_shared<std::ifstream>(opt.path.string(), std::ios_base::binary);
-    sha256 = common::file_sha256(opt.path.string().c_str());
-    size = common::file_size(opt.path.string());
-    uploader->upload_file(sf, fs, sha256.c_str(), size, "token");
+    uploader = new FileUploader2(client);
+    upload_ok = uploader->upload_file(sf, fs, opt.md5.c_str(), size, token);
+    if (upload_ok)
+    {
+        filesync::create_file_action *action = new filesync::create_file_action();
+        action->is_hidden = false;
+        action->location = common::strcpy(opt.location.string().c_str());
+        action->md5 = common::strcpy(opt.md5.c_str());
+        action->name = common::strcpy(opt.filename.c_str());
+        committer = new filesync::ChangeCommitter(cfg.server_ip, cfg.server_port);
+        committer->add_action(filesync::PATH(opt.location.string()), action);
+        if (committer->commit(token))
+        {
+            common::print_info("Finished.");
+            goto exit;
+        }
+    }
+    std::cout << "Failed to upload file." << std::endl;
 exit:
+    delete committer;
+    delete api;
     delete uploader;
 }
 void begin_upload2(filesync::CMD_UPLOAD_OPTION opt)
@@ -396,7 +479,7 @@ void DownloadCMD::callback()
     }
     std::string token;
     std::string maxid;
-    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid), serverIP, port, getServerId());
+    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(serverIP, port, getServerId());
     if (!client->login())
     {
         std::cout << "login failed" << std::endl;

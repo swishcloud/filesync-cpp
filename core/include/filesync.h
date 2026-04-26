@@ -16,6 +16,7 @@
 #include <commotion/client/client.h>
 #include <internal.h>
 #include <monitor.h>
+#include "webapi.h"
 #include <queue>
 #include <mutex>
 #include <server.h>
@@ -23,23 +24,11 @@
 // TODO: Reference additional headers your program requires here.
 namespace filesync
 {
-	enum class FileStatus
-	{
-		None = 0X00,
-		Unknown = 0X01,
-		Conflict = 0X02,
-		Modified = 0X4,
-		Added = 0X8,
-		Online = 0X10,
-		Synced = 0X20,
-		OutOfDate
-	};
 	class ChangeCommitter;
 	class FileSync;
 	class tcp_client;
 	struct File;
 	class ServerFile;
-
 	struct FSConnectResult;
 	// CMD STRUCTURE
 	struct CMD_EXPORT_OPTION
@@ -75,17 +64,9 @@ namespace filesync
 
 } // namespace filesync
 
-class IWebAPI
-{
-public:
-	virtual ~IWebAPI() = default;
-	virtual std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision) = 0;
-	virtual filesync::ServerFile get_file_info(const std::string &md5, const size_t &size) = 0;
-};
 class FS_CLIENT
 {
 private:
-	IWebAPI *webapi;
 	::CLIENT client;
 	std::condition_variable cv;
 	std::mutex m;
@@ -93,12 +74,11 @@ private:
 	bool downloaded = false;
 
 public:
-	FS_CLIENT(IWebAPI *webapi, const std::string &serverIP, const int &serverPort, const std::string &serverId) : webapi(webapi), client(serverIP, serverPort), serverId(serverId)
+	FS_CLIENT(const std::string &serverIP, const int &serverPort, const std::string &serverId) : client(serverIP, serverPort), serverId(serverId)
 	{
 	}
 	~FS_CLIENT()
 	{
-		delete webapi;
 	}
 	void OnFileDownloaded()
 	{
@@ -115,12 +95,12 @@ public:
 		}
 		return 1;
 	}
-	void Upload(std::shared_ptr<std::istream> fs, const char *md5, size_t size, std::string token);
+	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
 	void DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
 	{
 		client._file_downloaded_cb = std::function<void()>([this]()
 														   { this->OnFileDownloaded(); });
-		client.requestFile(serverId.c_str(), server_path.c_str(), save_path.c_str());
+		// client.requestFile(serverId.c_str(), server_path.c_str(), save_path.c_str());
 		std::unique_lock<std::mutex> lock(m);
 		cv.wait(lock, [this]()
 				{ return downloaded; });
@@ -203,51 +183,65 @@ public:
 	bool monitor_path(PATH path);
 	std::string get_token(std::string account);
 };
-struct filesync::File
+inline int FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token)
 {
-private:
-public:
-	FileStatus status;
-	std::string full_path;
-	std::string relative_path;
-	std::string server_path;
-	std::string id;
-	std::string commit_id;
-	std::string name;
-	std::string md5;
-	size_t size;
-	bool is_directory;
-};
-class filesync::ServerFile
-{
-private:
-public:
-	std::string name;
-	bool is_directory;
-	std::string md5;
-	std::size_t size;
-	std::size_t uploaded_size;
-	std::string commit_id;
-	std::string path;
-	std::string server_file_id;
-	bool is_completed;
-};
-inline void FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const char *md5, size_t size, std::string token)
-{
-	filesync::ServerFile sf = webapi->get_file_info(md5, size);
-	std::cout << "file info: \n"
-			  << sf << std::endl;
-	//  client.uploadFile(serverId.c_str(), *fs, sha256, size);
+	if (sf.server_file_id.size() != 36 || sf.path.size() != 36 || strlen(md5) != 32)
+	{
+		std::cout << "invalid parameters" << std::endl;
+		return 0;
+	}
+
+	auto stripHyphen = [](std::string str)
+	{
+		str.erase(std::remove(str.begin(), str.end(), '-'), str.end());
+		return str;
+	};
+
+	const std::string targetId = serverId;															// 16bytes
+	const std::unique_ptr<char[]> serverFileId(hexToBytes(stripHyphen(sf.server_file_id).c_str())); // 16bytes
+	const std::unique_ptr<char[]> filepath(hexToBytes(stripHyphen(sf.path).c_str()));				// 16bytes
+	const std::string sha256 = std::string(md5) + md5;												// 32bytes
+	const std::string token = _token;																// variable length
+
+	char sha256Bytes[32];
+	std::string tmp(sha256);
+	for (int i = 31; i >= 0; i--)
+	{
+		tmp.data()[(i + 1) * 2] = 0;
+		sha256Bytes[i] = std::stoi(tmp.c_str() + i * 2, NULL, 16);
+	}
+
 	client.getUploadStreamCB = [&](const std::string &path, std::istream **is, std::string &_sha256,
 								   size_t &_size)
 	{
 		*is = fs.get();
-		_sha256 = md5;
+		_sha256 = sha256;
 		_size = size;
 	};
-	int res = client.sendFile(serverId.c_str(), "-");
+	int res = client.sendFile(targetId.c_str(), "-", sha256.c_str());
 	std::cout << "uploading file " << (res ? "success" : "failed") << std::endl;
-	// client.sendMessage(MT_RecordFile, {{"token", token}});
+	if (!res)
+	{
+		return 0;
+	}
+
+	char buf[16 + 16 + 16 + 32 + token.size()];
+	int index = 0;
+	memcpy(buf + index, targetId.c_str(), 16);
+	index += 16;
+	memcpy(buf + index, serverFileId.get(), 16);
+	index += 16;
+	memcpy(buf + index, filepath.get(), 16);
+	index += 16;
+	memcpy(buf + index, sha256Bytes, 32);
+	index += 32;
+	memcpy(buf + index, token.c_str(), token.size());
+	// send buf to server
+	if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_RecordFile), buf, sizeof(buf)))
+	{
+		return 0;
+	}
+	return 1;
 }
 // Overload operator<<
 inline std::ostream &filesync::operator<<(std::ostream &os, const filesync::ServerFile &file)
@@ -399,9 +393,9 @@ public:
 
 private:
 	std::shared_ptr<FS_CLIENT> client;
-	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const sha256, const size_t &size, const std::string &token)
+	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &_token)
 	{
-		client->Upload(fs, sha256, size, token);
+		client->Upload(fs, sf, md5, size, _token);
 		return true;
 	}
 };
@@ -514,83 +508,6 @@ public:
 		}
 	}
 };
-class WebAPI : public IWebAPI
-{
-private:
-	const std::string serverIP;
-	const std::string port;
-	const std::string token;
-	const std::string maxid;
-
-public:
-	WebAPI(const std::string &serverIP, const std::string &port, const std::string &token, const std::string &maxid) : serverIP(serverIP), port(port), token(token), maxid(maxid)
-	{
-	}
-	std::vector<filesync::File> get_file_list(const std::string &path, const std::string &revision)
-	{
-
-		std::vector<filesync::File> files;
-		std::cout << "get_file_list:" << path << std::endl;
-		std::string url_path = common::string_format("/api/files?path=%s&commit_id=%s&max=%s", common::url_encode(path.c_str()).c_str(), revision.c_str(), maxid.c_str());
-
-		std::cout << "construct http_client" << std::endl;
-		common::http_client c{serverIP, port, url_path, token};
-		std::cout << "Send get request" << std::endl;
-		c.GET();
-		if (c.error)
-		{
-			throw std::runtime_error(common::string_format("api request error:", c.error.message()));
-		}
-		// std::cout << c.resp_text << std::endl;
-		auto j = json::parse(c.resp_text);
-		auto err = j["error"];
-		if (!err.is_null())
-		{
-			throw std::runtime_error("server error:" + err.get<std::string>());
-		}
-		auto data = j["data"];
-		for (auto item : data)
-		{
-			std::string file_server_path = common::string_format("%s%s%s", path.c_str(), path == "/" ? "" : "/", item["name"].get<std::string>().c_str());
-			filesync::File f;
-			f.is_directory = strcmp(item["type"].get<std::string>().c_str(), "2") == 0;
-			f.commit_id = item["commit_id"];
-			f.name = item["name"];
-			f.id = item["id"];
-			f.server_path = file_server_path;
-			if (!f.is_directory)
-			{
-				f.size = std::stoull(item["size"].get<std::string>().c_str());
-				f.md5 = item["md5"].get<std::string>().substr(0, 32);
-			}
-			files.push_back(f);
-		}
-		return files;
-	}
-	filesync::ServerFile get_file_info(const std::string &md5, const size_t &size)
-	{
-		std::string url_path = common::string_format("/api/file-info?md5=%s&size=%zu", md5.c_str(), size);
-		common::http_client c{serverIP, port, url_path.c_str(), token};
-		c.GET();
-		if (c.error)
-		{
-			throw common::exception(c.error.message());
-		}
-		auto j = json::parse(c.resp_text);
-		auto data = j["data"];
-		if (!j["error"].is_null())
-		{
-			throw common::exception(common::string_format("Failed to get file info from web server:%s", j["error"].get<std::string>().c_str()));
-		}
-		filesync::ServerFile sf;
-		sf.is_completed = data["is_completed"].get<std::string>() == "true";
-		sf.path = data["path"].get<std::string>();
-		sf.size = std::stoul(data["size"].get<std::string>());
-		sf.uploaded_size = std::stoul(data["uploaded_size"].get<std::string>());
-		sf.server_file_id = data["server_file_id"].get<std::string>();
-		return sf;
-	}
-};
 
 class ITokenStore
 {
@@ -602,13 +519,36 @@ public:
 };
 inline std::string getServerId()
 {
-	std::string targetId = "60B62C1708BE42A1AFAD633E779EC4E3";
+	std::string targetId = "4669345BC5A04D88B700FC8B252368EB";
 	char id[16];
 	for (int i = targetId.size() - 2; i >= 0; i -= 2)
 	{
 		id[i / 2] = std::stoi(targetId.c_str() + i, NULL, 16);
 		targetId.data()[i] = 0;
 	}
-	return id;
+	return std::string(id, 16);
+}
+inline std::string getToken(const std::string account, const bool debugMode)
+{
+#ifndef __APPLE__
+	const std::string token_file_path = (std::filesystem::path(filesync::datapath) / common::string_format("token-%s", account.c_str())).string();
+	auto cmd = common::string_format("filesync-go login --insecure --token_path \"%s\"", token_file_path.c_str());
+	if (debugMode)
+	{
+		cmd = "development=true " + cmd;
+	}
+	system(cmd.c_str());
+	std::ifstream in(token_file_path);
+	std::string ss{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+	std::regex regex("accesstoken: (.+)");
+	std::smatch m;
+	if (std::regex_search(ss, m, regex))
+	{
+		return m[1].str();
+	}
+	return std::string();
+#elif
+	return std::string();
+#endif
 }
 #endif

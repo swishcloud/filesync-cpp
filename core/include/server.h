@@ -75,6 +75,7 @@ namespace filesync
     {
     private:
         SERVER_NS::SERVER server;
+        static int GetPublicKeyCB(const char *id, RawKey32::Bytes &key);
 
     public:
         SERVER(const int &port);
@@ -91,6 +92,8 @@ namespace filesync
         ::CLIENT client;
         bool canConnect = true;
         std::thread th;
+
+        static int GetPrivateKeyCB(const char *id, RawKey32::Bytes &key);
     };
 } // namespace filesync
 #endif
