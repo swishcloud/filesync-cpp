@@ -38,7 +38,9 @@ public:
     void reg(CLI::App *parent);
 
 private:
-    std::string serverIP;
-    int port;
+    std::string account;
+    std::string path;
+    std::string commit_id;
+    std::string save_path;
     void callback();
 };

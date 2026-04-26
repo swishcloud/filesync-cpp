@@ -63,19 +63,47 @@ namespace filesync
 	std::ostream &operator<<(std::ostream &os, const ServerFile &file);
 
 } // namespace filesync
-
 class FS_CLIENT
 {
 private:
+	class PrepareFileHandler : public MessageHandler
+	{
+	private:
+		FS_CLIENT &fs_client;
+
+	public:
+		PrepareFileHandler(FS_CLIENT &fs_client) : fs_client(fs_client) {}
+		int Handle(CLIENT *client, CORE::pMSG msg) override;
+	};
+	class PrepareFileFactory : public HandlerFactory
+	{
+	private:
+	private:
+		FS_CLIENT &fs_client;
+
+	public:
+		PrepareFileFactory(FS_CLIENT &fs_client) : fs_client(fs_client) {}
+		MessageHandler *CreateHandler(CORE::pMSG msg)
+		{
+			return new PrepareFileHandler(fs_client);
+		}
+	};
 	::CLIENT client;
 	std::condition_variable cv;
 	std::mutex m;
 	std::string serverId;
 	bool downloaded = false;
+	std::mutex download_id_mutex;
 
 public:
+	std::string downloadId;
+	std::string downloadSha256;
+	std::condition_variable download_id_cv;
 	FS_CLIENT(const std::string &serverIP, const int &serverPort, const std::string &serverId) : client(serverIP, serverPort), serverId(serverId)
 	{
+		delete client.sha256Generator;
+		client.sha256Generator = new filesync::SHA256Generator();
+		client.emplaceHandleFactory(static_cast<::MsgType>(filesync::MT_PrepareFile), new PrepareFileFactory(*this));
 	}
 	~FS_CLIENT()
 	{
@@ -98,15 +126,64 @@ public:
 	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
 	void DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
 	{
+		// send a MT_PrepareFile msg to get ready for downloading file, the server will response with a MT_RecordFile msg containing a downloading id when the file is ready
+		const std::string targetId = serverId;									 // 16bytes
+		const int dataLen = 16 + 16 + 1 + server_path.size() + 1 + token.size(); // target_id(16 bytes), commit_id(16 bytes),server_path_len(1 byte),server_path(variable length), token_len(1 byte), token(variable length)
+		char buf[dataLen];
+		int index = 0;
+		memcpy(buf + index, targetId.c_str(), 16);
+		index += 16;
+		std::unique_ptr<char[]> commitIdBytes(hexToBytes(filesync::stripHyphen(commit_id).c_str())); // 16 bytes
+		memcpy(buf + index, commitIdBytes.get(), 16);
+		index += 16;
+		buf[index] = server_path.size();
+		index += 1;
+		memcpy(buf + index, server_path.c_str(), server_path.size());
+		index += server_path.size();
+		buf[index] = token.size();
+		index += 1;
+		memcpy(buf + index, token.c_str(), token.size());
+		if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), buf, dataLen))
+		{
+			common::print_info("faild to send msg");
+			return;
+		}
+		std::unique_lock<std::mutex> dlk(download_id_mutex);
+		if (!download_id_cv.wait_for(dlk, std::chrono::seconds(30), [this]()
+									 { return !downloadId.empty(); }))
+		{
+			common::print_info("failed to receive download id from server");
+			return;
+		}
 		client._file_downloaded_cb = std::function<void()>([this]()
 														   { this->OnFileDownloaded(); });
-		// client.requestFile(serverId.c_str(), server_path.c_str(), save_path.c_str());
-		std::unique_lock<std::mutex> lock(m);
-		cv.wait(lock, [this]()
+		client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str());
+		std::unique_lock<std::mutex> downloadM(m);
+		cv.wait(downloadM, [this]()
 				{ return downloaded; });
 		std::cout << "file downloaded" << std::endl;
 	};
 };
+inline int FS_CLIENT::PrepareFileHandler::Handle(CLIENT *client, CORE::pMSG msg)
+{
+	// parse a MT_PrepareFile msg which contains targetId, downloading id and sha256
+	char targetId[16];
+	char downloadId[16];
+	char sha256[32];
+	int index = 0;
+	memcpy(targetId, msg->data + index, 16);
+	index += 16;
+	memcpy(downloadId, msg->data + index, 16);
+	index += 16;
+	memcpy(sha256, msg->data + index, 32);
+	std::unique_ptr<char[]> downloadIdHex(bytesTohex(downloadId, 16));
+	const std::string downloadIdStr = std::string(downloadIdHex.get(), 32);
+	common::print_debug(common::string_format("Received downloadId: %s", downloadIdStr.c_str()));
+	fs_client.downloadId = downloadIdStr;
+	fs_client.downloadSha256 = std::string(sha256, 32);
+	fs_client.download_id_cv.notify_one();
+	return 1;
+}
 class filesync::FileSync
 {
 private:
@@ -191,17 +268,11 @@ inline int FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const filesync::S
 		return 0;
 	}
 
-	auto stripHyphen = [](std::string str)
-	{
-		str.erase(std::remove(str.begin(), str.end(), '-'), str.end());
-		return str;
-	};
-
-	const std::string targetId = serverId;															// 16bytes
-	const std::unique_ptr<char[]> serverFileId(hexToBytes(stripHyphen(sf.server_file_id).c_str())); // 16bytes
-	const std::unique_ptr<char[]> filepath(hexToBytes(stripHyphen(sf.path).c_str()));				// 16bytes
-	const std::string sha256 = std::string(md5) + md5;												// 32bytes
-	const std::string token = _token;																// variable length
+	const std::string targetId = serverId;																	  // 16bytes
+	const std::unique_ptr<char[]> serverFileId(hexToBytes(filesync::stripHyphen(sf.server_file_id).c_str())); // 16bytes
+	const std::unique_ptr<char[]> filepath(hexToBytes(filesync::stripHyphen(sf.path).c_str()));				  // 16bytes
+	const std::string sha256 = std::string(md5) + md5;														  // 32bytes
+	const std::string token = _token;																		  // variable length
 
 	char sha256Bytes[32];
 	std::string tmp(sha256);

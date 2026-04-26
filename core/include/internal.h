@@ -110,5 +110,25 @@ namespace filesync
         int port;
         bool is_completed;
     };
+
+    inline std::string addHyphens(const std::string &uuid)
+    {
+        if (uuid.size() != 32)
+        {
+            throw std::invalid_argument("UUID must be 32 characters without hyphens");
+        }
+
+        return uuid.substr(0, 8) + "-" +
+               uuid.substr(8, 4) + "-" +
+               uuid.substr(12, 4) + "-" +
+               uuid.substr(16, 4) + "-" +
+               uuid.substr(20, 12);
+    };
+    inline std::string stripHyphen(const std::string &str)
+    {
+        std::string result = str;
+        result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
+        return result;
+    };
 } // namespace filesync
 #endif

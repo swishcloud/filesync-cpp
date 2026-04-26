@@ -21,6 +21,7 @@
 using namespace nlohmann;
 using boost::asio::ip::tcp;
 #define TokenHeaderKey "access_token"
+#define MaxDownloadingFileCount 10
 #define FILESYNC_HANDLER_TYPE_REQUIREMENTS_ASSERT(HANDLER, P) static_assert(std::is_convertible<decltype(std::declval<HANDLER>()(P)), void>::value, "template parameter error");
 #define FILESYNC_HANDLER_TYPE_REQUIREMENTS_ASSERT2(HANDLER, P1, P2) static_assert(std::is_convertible<decltype(std::declval<HANDLER>()(P1, P2)), void>::value, "template parameter error");
 #define FILESYNC_HANDLER_TYPE_REQUIREMENTS_ASSERT3(HANDLER, P1, P2, P3) static_assert(std::is_convertible<decltype(std::declval<HANDLER>()(P1, P2, P3)), void>::value, "template parameter error");
@@ -76,22 +77,52 @@ namespace filesync
     private:
         SERVER_NS::SERVER server;
         static int GetPublicKeyCB(const char *id, RawKey32::Bytes &key);
+        std::mutex downloadingFilesMutex;
+        std::queue<std::pair<std::string, filesync::ServerFile>> downloadingFiles;
 
     public:
         SERVER(const int &port);
         void listen();
+        std::string addDownloadingFile(const filesync::ServerFile &sf)
+        {
+            std::lock_guard<std::mutex> lock(downloadingFilesMutex);
+            const std::string downloadId = common::uuid();
+            downloadingFiles.push({downloadId, sf});
+            if (downloadingFiles.size() > MaxDownloadingFileCount)
+            {
+                downloadingFiles.pop();
+            }
+            return downloadId;
+        }
+        bool getDownloadingFile(const std::string &downloadId, filesync::ServerFile &sf)
+        {
+            std::lock_guard<std::mutex> lock(downloadingFilesMutex);
+            std::queue<std::pair<std::string, filesync::ServerFile>> tempQueue = downloadingFiles;
+            while (!tempQueue.empty())
+            {
+                auto &item = tempQueue.front();
+                if (item.first == downloadId)
+                {
+                    sf = item.second;
+                    return true;
+                }
+                tempQueue.pop();
+            }
+            return false;
+        }
     };
     class CLIENT
     {
     public:
         ~CLIENT();
-        CLIENT(const std::string &server_host, const int &server_port);
+        CLIENT(const std::string &server_host, const int &server_port, SERVER &server);
         void connect();
 
     private:
         ::CLIENT client;
         bool canConnect = true;
         std::thread th;
+        SERVER &server;
 
         static int GetPrivateKeyCB(const char *id, RawKey32::Bytes &key);
     };

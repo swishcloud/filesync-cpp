@@ -65,34 +65,110 @@ filesync::CLIENT::~CLIENT()
 }
 class PrepareFileHandler : public MessageHandler
 {
+    filesync::SERVER *server;
+
+public:
+    PrepareFileHandler(filesync::SERVER *server) : server(server) {}
     int Handle(CLIENT *client, CORE::pMSG msg)
     {
-        return 0;
+        // parse a MT_PrepareFile msg, the data contains targetId(16bytes), commit_id(32bytes), server_path_length(1byte), server_path(variable length), token_length(1byte), token(variable length)
+        char targetId[16];
+        char commitId[16];
+        int serverPathLen;
+        char serverPath[256];
+        int tokenLen;
+        char token[256];
+        int index = 0;
+        memcpy(targetId, msg->data + index, 16);
+        index += 16;
+        memcpy(commitId, msg->data + index, 16);
+        index += 16;
+        serverPathLen = msg->data[index];
+        if (serverPathLen <= 0 || serverPathLen > 255)
+        {
+            common::print_info(common::string_format("invalid server path length: %d", serverPathLen));
+            return 0;
+        }
+        serverPath[serverPathLen] = 0;
+        index += 1;
+        memcpy(serverPath, msg->data + index, serverPathLen);
+        index += serverPathLen;
+        tokenLen = msg->data[index];
+        if (tokenLen <= 0 || tokenLen > 255)
+        {
+            common::print_info(common::string_format("invalid token length: %d", tokenLen));
+            return 0;
+        }
+        token[tokenLen] = 0;
+        index += 1;
+        memcpy(token, msg->data + index, tokenLen);
+        // check if the file is ready for downloading, if not ready, return false
+        std::unique_ptr<char[]> commitIdHex(bytesTohex(commitId, 16));
+        const std::string commitIdStr = filesync::addHyphens(std::string(commitIdHex.get(), 32));
+
+        filesync::CONFIG cfg;
+        auto err = cfg.load();
+        if (err)
+        {
+            filesync::print_info(err.message());
+            return 0;
+        }
+        IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), std::string(token, sizeof(token)), "");
+        filesync::ServerFile sf;
+        int res = api->get_file(serverPath, commitIdStr, sf);
+        delete api;
+        if (!res)
+        {
+            common::print_debug("Failed to get file info");
+            return 0;
+        }
+        if (!sf.is_completed)
+        {
+            common::print_debug("File is not ready for downloading");
+            return 0;
+        }
+        // associate a download id with the client, and save the mapping of download id and file info in memory for later use.
+        const std::string downloadId = filesync::stripHyphen(server->addDownloadingFile(sf));
+
+        // send back the download id to client to notify the client to start downloading file
+        std::string sha256 = sf.md5 + sf.md5;
+        std::cout << "download id:" << downloadId << ", sha256:" << sha256 << std::endl;
+        std::unique_ptr<char[]> sha256Bytes(hexToBytes(sha256.c_str())); // 32 bytes
+        char respData[64];                                               // 16 bytes targetId + 16 bytes downloadId+ 32 bytes sha256
+        int respIndex = 0;
+        memcpy(respData + respIndex, targetId, 16);
+        respIndex += 16;
+        std::unique_ptr<char[]> downloadIdBytes(hexToBytes(downloadId.c_str())); // 16 bytes
+        memcpy(respData + respIndex, downloadIdBytes.get(), 16);
+        respIndex += 16;
+        memcpy(respData + respIndex, sha256Bytes.get(), 32);
+        respIndex += 32;
+        client->sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), respData, respIndex);
+        return 1;
     }
 };
 class PrepareFileFactory : public HandlerFactory
 {
+private:
+    filesync::SERVER *server;
+
 public:
+    PrepareFileFactory(filesync::SERVER *server) : server(server) {}
     MessageHandler *CreateHandler(CORE::pMSG msg)
     {
-        return new PrepareFileHandler();
+        return new PrepareFileHandler(server);
     }
 };
 class RecordFileHandler : public MessageHandler
 {
+
+private:
+    filesync::SERVER *server;
+
+public:
+    RecordFileHandler(filesync::SERVER *server) : server(server) {}
     int Handle(CLIENT *client, CORE::pMSG msg)
     {
-        auto addHyphens = [](const std::string &uuid)
-        { if (uuid.size() != 32)
-            {
-                throw std::invalid_argument("UUID must be 32 characters without hyphens");
-            }
-
-            return uuid.substr(0, 8) + "-" +
-                   uuid.substr(8, 4) + "-" +
-                   uuid.substr(12, 4) + "-" +
-                   uuid.substr(16, 4) + "-" +
-                   uuid.substr(20, 12); };
         std::cout << "RecordFileHandler entered!!!" << std::endl;
         // parse data
         char targetId[16];                            // 16bytes
@@ -114,8 +190,8 @@ class RecordFileHandler : public MessageHandler
         std::unique_ptr<char[]> sha256Hex(bytesTohex(sha256, 32));
         std::unique_ptr<char[]> filepathHex(bytesTohex(filepath, 16));
         std::unique_ptr<char[]> serverFileIdHex(bytesTohex(serverFileId, 16));
-        std::string filepathHyphen = addHyphens(std::string(filepathHex.get(), 32));
-        std::string serverFileIdHyphen = addHyphens(std::string(serverFileIdHex.get(), 32));
+        std::string filepathHyphen = filesync::addHyphens(std::string(filepathHex.get(), 32));
+        std::string serverFileIdHyphen = filesync::addHyphens(std::string(serverFileIdHex.get(), 32));
         const std::string uploadPath = client->pathGenerator->GetUploadPath(std::string(targetId, 16), std::string(sha256Hex.get(), 64), "-");
         std::cout << "server file id:" << serverFileIdHyphen << std::endl;
         // If the final file already exists, it means the client has already uploaded the file, signal a warning and return false
@@ -169,14 +245,23 @@ class RecordFileHandler : public MessageHandler
 };
 class RecordFileFactory : public HandlerFactory
 {
+private:
+    filesync::SERVER *server;
+
+public:
+    RecordFileFactory(filesync::SERVER *server) : server(server) {}
     MessageHandler *CreateHandler(CORE::pMSG msg)
     {
-        return new RecordFileHandler();
+        return new RecordFileHandler(server);
     }
 };
 class FileSyncPathGenerator : public IPathGenerator
 {
+private:
+    filesync::SERVER &server;
+
 public:
+    FileSyncPathGenerator(filesync::SERVER &server) : server(server) {}
     std::string GetUploadPath(const std::string targetId, const std::string sha256, const std::string filename)
     {
         std::unique_ptr<char[]> targetID(bytesTohex(targetId.c_str(), 16));
@@ -192,21 +277,34 @@ public:
         }
         return path;
     }
-    std::string GetSharedPath(const std::string filename)
+    std::string GetSharedPath(const std::string name)
     {
-        throw std::runtime_error("shared path is not supported in FileSyncPathGenerator");
+        std::string downloadId = name;
+        std::transform(downloadId.begin(), downloadId.end(), downloadId.begin(), ::tolower);
+        downloadId = filesync::addHyphens(downloadId);
+        filesync::ServerFile sf;
+        if (!server.getDownloadingFile(downloadId, sf))
+            return "";
+        std::string serverFileName = sf.path;
+        std::string path = common::string_format("%s/%s", FILE_SAVE_PATH, serverFileName.c_str());
+        if (!common::file_exist(path.c_str()))
+        {
+            std::transform(serverFileName.begin(), serverFileName.end(), serverFileName.begin(), ::toupper);
+            path = common::string_format("%s/%s", FILE_SAVE_PATH, serverFileName.c_str());
+        }
+        return path;
     }
 };
-filesync::CLIENT::CLIENT(const std::string &server_host, const int &server_port) : client(server_host, server_port)
+filesync::CLIENT::CLIENT(const std::string &server_host, const int &server_port, filesync::SERVER &server) : client(server_host, server_port), server(server)
 {
     delete client.sha256Generator;
     client.sha256Generator = new filesync::SHA256Generator();
     client.getPrivateKeyCB = GetPrivateKeyCB;
     client.edPriId = SERVER_ED25519_PUB_KEY_ID;
     delete client.pathGenerator;
-    client.pathGenerator = new FileSyncPathGenerator();
-    client.emplaceHandleFactory(static_cast<::MsgType>(MT_PrepareFile), new PrepareFileFactory());
-    client.emplaceHandleFactory(static_cast<::MsgType>(MT_RecordFile), new RecordFileFactory());
+    client.pathGenerator = new FileSyncPathGenerator(server);
+    client.emplaceHandleFactory(static_cast<::MsgType>(MT_PrepareFile), new PrepareFileFactory(&server));
+    client.emplaceHandleFactory(static_cast<::MsgType>(MT_RecordFile), new RecordFileFactory(&server));
 }
 void filesync::CLIENT::connect()
 {

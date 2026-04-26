@@ -20,7 +20,7 @@ void begin_listen(std::string listen_port, std::string files_path)
 #endif
     int port = std::stoi(listen_port);
     filesync::SERVER server(port);
-    filesync::CLIENT client("127.0.0.1", port);
+    filesync::CLIENT client("127.0.0.1", port, server);
     client.connect();
     server.listen();
 
@@ -280,6 +280,12 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 
         goto exit;
     }
+    if (sf.is_completed)
+    {
+        common::print_info("file already exists in server");
+
+        goto exit;
+    }
     std::cout << "file info: \n"
               << sf << std::endl;
     client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
@@ -461,14 +467,15 @@ int filesync::run(int argc, const char *argv[])
 void DownloadCMD::reg(CLI::App *parent)
 {
     auto download = parent->add_subcommand("download", "download file from server");
-    download->add_option("--serverIP", serverIP, "the server IP")->required();
-    download->add_option("--port", port, "the server port")->required();
+    download->add_option("--account", account, "your account name")->required();
+    download->add_option("--path", path, "the file path in the server")->required();
+    download->add_option("--commit_id", commit_id, "the commit ID of the file")->required();
+    download->add_option("--save_path", save_path, "the path to save the downloaded file")->required();
     download->callback([this]()
                        { callback(); });
 }
 void DownloadCMD::callback()
 {
-    common::print_debug("download callback");
 
     filesync::CONFIG cfg;
     auto err = cfg.load();
@@ -477,15 +484,31 @@ void DownloadCMD::callback()
         filesync::print_info(err.message());
         return;
     }
-    std::string token;
-    std::string maxid;
-    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(serverIP, port, getServerId());
+    const std::string token = getToken(account, cfg.debug_mode);
+    std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
+    IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, "");
+    filesync::ServerFile sf;
+    int res = api->get_file(path, commit_id, sf);
+    delete api;
+    if (!res)
+    {
+        common::print_debug("Failed to get file info");
+        return;
+    }
+    if (!sf.is_completed)
+    {
+        common::print_info("the file doesn't exist in server");
+        return;
+    }
+    std::cout << "file info: \n"
+              << sf << std::endl;
+    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
     if (!client->login())
     {
         std::cout << "login failed" << std::endl;
         return;
     }
     IFileDownloader *downloader = new FileDownloader2(client);
-    downloader->download_file("/test/test.txt", "commit_id", "save_path", "token");
+    downloader->download_file(path, commit_id, save_path, token);
     delete downloader;
 }
