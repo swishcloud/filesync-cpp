@@ -39,8 +39,8 @@ namespace filesync
 	{
 	public:
 		virtual ~IChangeCommitter() = default;
-		virtual IChangeCommitter *add_action(PATH path, action_base *action) = 0;
-		virtual bool commit(std::string token) = 0;
+		virtual int add_action(PATH path, action_base *action) = 0;
+		virtual bool commit(std::string token, std::string &commit_id) = 0;
 	};
 	class ChangeCommitter : public IChangeCommitter
 	{
@@ -53,9 +53,9 @@ namespace filesync
 	public:
 		ChangeCommitter(const std::string &server_ip, const int &port);
 		~ChangeCommitter();
-		IChangeCommitter *add_action(PATH path, action_base *action);
+		int add_action(PATH path, action_base *action);
 		void clear();
-		bool commit(std::string token = std::string{});
+		bool commit(std::string token, std::string &commit_id);
 		void Dump();
 	}; // namespace filesync
 }

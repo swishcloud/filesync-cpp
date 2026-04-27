@@ -202,9 +202,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
     bool upload_ok = false;
     std::shared_ptr<std::istream> fs;
     filesync::CONFIG cfg;
-    std::string token;
     std::string maxid;
-    size_t size;
     filesync::ServerFile sf;
     std::shared_ptr<FS_CLIENT> client;
     common::error err;
@@ -258,12 +256,11 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 
         goto exit;
     }
-    token = token.empty() ? getToken(opt.account, cfg.debug_mode) : token;
+    opt.token = opt.token.empty() ? getToken(opt.account, cfg.debug_mode) : opt.token;
     std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
 
-    api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid);
-    size = common::file_size(opt.path.string());
-    if (!api->get_file_info(opt.md5, size, sf))
+    api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), opt.token, maxid);
+    if (!api->get_file_info(opt.md5, opt.size, sf))
     {
         common::print_debug("Failed to get file info");
 
@@ -285,7 +282,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
         goto exit;
     }
     uploader = new FileUploader2(client);
-    upload_ok = uploader->upload_file(sf, fs, opt.md5.c_str(), size, token);
+    upload_ok = uploader->upload_file(sf, fs, opt.md5.c_str(), opt.size, opt.token);
     if (upload_ok)
     {
         filesync::create_file_action *action = new filesync::create_file_action();
@@ -295,9 +292,11 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
         action->name = common::strcpy(opt.filename.c_str());
         committer = new filesync::ChangeCommitter(cfg.server_ip, cfg.server_port);
         committer->add_action(filesync::PATH(opt.location.string()), action);
-        if (committer->commit(token))
+        std::string commit_id;
+        if (committer->commit(opt.token, commit_id))
         {
-            common::print_info("Finished.");
+            common::print_info("Finished.\r\ncommit id:" + commit_id);
+            exit_code = 0;
             goto exit;
         }
     }
@@ -379,9 +378,10 @@ void begin_upload2(filesync::CMD_UPLOAD_OPTION opt)
         action->md5 = common::strcpy(opt.md5.c_str());
         action->name = common::strcpy(opt.filename.c_str());
         filesync->committer->add_action(filesync::PATH(opt.location.string()), action);
-        if (filesync->committer->commit(token))
+        std::string commit_id;
+        if (filesync->committer->commit(token, commit_id))
         {
-            common::print_info("Finished.");
+            common::print_info("Finished.\r\ncommit id:" + commit_id);
             exit_code = 0;
         }
     }
@@ -414,11 +414,8 @@ void CMD_UPLOAD(CLI::App *parent)
     auto upload_cmd = parent->add_subcommand("upload", "upload a file");
     auto opt = std::shared_ptr<filesync::CMD_UPLOAD_OPTION>{new filesync::CMD_UPLOAD_OPTION};
     opt->size = SIZE_MAX;
-    upload_cmd->add_option("--serverIP", opt->serverIP, "the server IP")->required();
-    upload_cmd->add_option("--port", opt->port, "the server port")->required();
     upload_cmd->add_option("--filename", opt->filename, "the filename to save on server");
     upload_cmd->add_option("--md5", opt->md5, "the md5 of file to upload");
-    upload_cmd->add_option("--sha256", opt->md5, "the sha256 of file to upload");
     upload_cmd->add_option("--location", opt->location, "the server path where save the uploaded file")->required();
     upload_cmd->add_option("--token", opt->token);
     upload_cmd->add_option("--account", opt->account);

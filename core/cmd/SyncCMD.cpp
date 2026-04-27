@@ -102,7 +102,8 @@ void SyncCMD::addRunCmd(CLI::App *parent)
             }
             if (!procoss_monitor_failed)
             {
-                if (!filesync->committer->commit())
+                std::string commit_id;
+                if (!filesync->committer->commit(getToken(account,cfg.debug_mode), commit_id))
                     process_monitor = false;
             }
             else

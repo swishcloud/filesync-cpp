@@ -13,9 +13,15 @@ filesync::ChangeCommitter::ChangeCommitter(const std::string &server_ip, const i
 filesync::ChangeCommitter::~ChangeCommitter()
 {
 }
-filesync::IChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, action_base *action)
+int filesync::ChangeCommitter::add_action(PATH path, action_base *action)
 {
 	const int MAX_ACTION_LIMIT = 50;
+
+	if (this->actionTreeRoot->Size() == MAX_ACTION_LIMIT)
+	{
+		std::cout << "reached max action limit, commit before adding more actions." << std::endl;
+		return 0;
+	}
 
 	// if it's a file, make sure that the parent directory will be created if it doesn't not exist
 	if (action->type == 1)
@@ -34,22 +40,13 @@ filesync::IChangeCommitter *filesync::ChangeCommitter::add_action(PATH path, act
 
 	this->actionTreeRoot->AddAction(path, action);
 	filesync::print_info(common::string_format("pending %d/%d actions", this->actionTreeRoot->Size(), MAX_ACTION_LIMIT));
-
-	if (this->actionTreeRoot->Size() == MAX_ACTION_LIMIT)
-	{
-		if (!this->commit())
-		{
-			delete action;
-			throw common::exception("commiting changes failed.");
-		}
-	}
-	return this;
+	return 1;
 }
 void filesync::ChangeCommitter::clear()
 {
 	this->actionTreeRoot->Free();
 }
-bool filesync::ChangeCommitter::commit(std::string token)
+bool filesync::ChangeCommitter::commit(std::string token, std::string &commit_id)
 {
 	json j_directories_arr = json::array();
 	json j_file_arr = json::array();
@@ -111,6 +108,7 @@ bool filesync::ChangeCommitter::commit(std::string token)
 		}
 		else
 		{
+			commit_id = j["data"].get<std::string>();
 			ok = true;
 		}
 	}

@@ -99,7 +99,7 @@ namespace filesync
     private:
     public:
         std::string name;
-        bool is_directory;
+        bool is_directory = false;
         std::string md5;
         std::size_t size;
         std::size_t uploaded_size;
@@ -107,8 +107,8 @@ namespace filesync
         std::string path;
         std::string server_file_id;
         std::string ip;
-        int port;
-        bool is_completed;
+        int port = 0;
+        bool is_completed = false;
     };
 
     inline std::string addHyphens(const std::string &uuid)
