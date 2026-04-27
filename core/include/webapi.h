@@ -13,6 +13,7 @@ public:
     virtual int get_file_info(const std::string &md5, const size_t &size, filesync::ServerFile &sf) = 0;
     virtual int get_file(const std::string &path, const std::string &commit_id, filesync::ServerFile &sf) = 0;
     virtual int complete_server_file(const std::string &server_file_id) = 0;
+    virtual int add_block(const std::string &server_file_id, const std::string &name, const size_t &start, const size_t &end) = 0;
 };
 class WebAPI : public IWebAPI
 {
@@ -130,6 +131,29 @@ public:
         http::UrlValues values;
         values.add("server_file_id", server_file_id.c_str());
         c.PUT("/api/file", values.str, token);
+        if (c.error)
+        {
+            common::print_info(c.error.message());
+            return 0;
+        }
+        json resp = json::parse(c.resp_text);
+        if (!resp["error"].empty())
+        {
+            common::print_info(common::string_format("Api error:", resp["error"].get<std::string>().c_str()));
+            return 0;
+        }
+        return 1;
+    }
+    int add_block(const std::string &server_file_id, const std::string &name, const size_t &start, const size_t &end)
+    {
+        common::http_client c{serverIP, std::stoi(port.c_str())};
+        std::string url_path = common::string_format("/api/file-block");
+        http::UrlValues values;
+        values.add("server_file_id", server_file_id.c_str());
+        values.add("name", name.c_str());
+        values.add("start", start);
+        values.add("end", end);
+        c.POST(url_path, values.str, token);
         if (c.error)
         {
             common::print_info(c.error.message());

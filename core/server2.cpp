@@ -127,6 +127,11 @@ public:
             common::print_debug("File is not ready for downloading");
             return 0;
         }
+        if (sf.uploaded_size != sf.size)
+        {
+            common::print_debug("ERROR:File is not fully uploaded, uploaded size:" + std::to_string(sf.uploaded_size) + ", total size:" + std::to_string(sf.size));
+            return 0;
+        }
         // associate a download id with the client, and save the mapping of download id and file info in memory for later use.
         const std::string downloadId = filesync::stripHyphen(server->addDownloadingFile(sf));
 
@@ -193,6 +198,7 @@ public:
         std::string filepathHyphen = filesync::addHyphens(std::string(filepathHex.get(), 32));
         std::string serverFileIdHyphen = filesync::addHyphens(std::string(serverFileIdHex.get(), 32));
         const std::string uploadPath = client->pathGenerator->GetUploadPath(std::string(targetId, 16), std::string(sha256Hex.get(), 64), "-");
+        const size_t file_size = std::filesystem::file_size(uploadPath);
         std::cout << "server file id:" << serverFileIdHyphen << std::endl;
         // If the final file already exists, it means the client has already uploaded the file, signal a warning and return false
         std::string finalPath = common::string_format("%s/%s", FILE_SAVE_PATH, filepathHyphen.c_str());
@@ -233,11 +239,14 @@ public:
             return 0;
         }
         IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), std::string(token, sizeof(token)), "");
-        int res = api->complete_server_file(serverFileIdHyphen);
+        std::string block_name = common::uuid(); // fake name for block record, since the file is already uploaded, the block record is not important and won't be used.
+        int res = api->add_block(serverFileIdHyphen, block_name, 0, file_size);
+        if (res)
+            res = api->complete_server_file(serverFileIdHyphen);
         delete api;
         if (!res)
         {
-            common::print_info("failed to complete server file");
+            common::print_info("failed to add block or complete server file");
             return 0;
         }
         return 1;

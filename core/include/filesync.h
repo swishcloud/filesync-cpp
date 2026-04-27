@@ -108,9 +108,9 @@ public:
 	~FS_CLIENT()
 	{
 	}
-	void OnFileDownloaded()
+	void OnFileDownloaded(const char *filepath, bool success)
 	{
-		common::print_debug("file downloaded callback");
+		common::print_info(common::string_format("File download %s", success ? "successful" : "failed"));
 		downloaded = true;
 		cv.notify_one();
 	}
@@ -155,13 +155,12 @@ public:
 			common::print_info("failed to receive download id from server");
 			return;
 		}
-		client._file_downloaded_cb = std::function<void()>([this]()
-														   { this->OnFileDownloaded(); });
+		client._file_downloaded_cb = [this](const char *filepath, bool success)
+		{ OnFileDownloaded(filepath, success); };
 		client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str());
 		std::unique_lock<std::mutex> downloadM(m);
 		cv.wait(downloadM, [this]()
 				{ return downloaded; });
-		std::cout << "file downloaded" << std::endl;
 	};
 };
 inline int FS_CLIENT::PrepareFileHandler::Handle(CLIENT *client, CORE::pMSG msg)

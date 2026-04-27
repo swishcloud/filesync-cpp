@@ -208,22 +208,17 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
     filesync::ServerFile sf;
     std::shared_ptr<FS_CLIENT> client;
     common::error err;
-    if (opt.account.empty() && opt.token.empty())
+    if (!(opt.account.empty() ^ opt.token.empty()))
     {
-        common::print_info("at least one of the parameters account and token is required");
+        common::print_info("Either the 'account' or 'token' parameter must be specified, and only one of them can be specified.");
         goto exit;
     }
     common::print_info(common::string_format("md5:%s location:%s", opt.md5.c_str(), opt.location.string().c_str()));
-    /*std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    for (std::string line; std::getline(std::cin, line);)
-    {
-        common::print_info(line);
-    }*/
     if (!opt.path.string().empty())
     {
-        if (opt.size != SIZE_MAX)
+        if (!opt.md5.empty() || opt.size != SIZE_MAX)
         {
-            common::print_info(std::string("parameter PATH and parameter SIZE can not be used together."));
+            common::print_info(std::string("The parameters 'md5' and 'size' cannot be used with 'path'."));
             goto exit;
         }
         opt.md5 = common::file_md5(opt.path.string().c_str());
@@ -242,22 +237,16 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
     }
     else
     {
-        if (opt.size == SIZE_MAX)
+        if (opt.size == SIZE_MAX || opt.md5.empty())
         {
-            common::print_info(std::string("please specify the parameter SIZE."));
-
-            goto exit;
-        }
-        if (opt.md5.empty())
-        {
-            common::print_info(std::string("please specify the parameter MD5 when PATH not specified."));
+            common::print_info(std::string("Please specify the parameters 'size' and 'MD5' when 'path' is not specified."));
 
             goto exit;
         }
         fs = std::shared_ptr<std::istream>{&std::cin, [](void *) {}};
         if (opt.filename.empty())
         {
-            common::print_info("missing filename parameter");
+            common::print_info("missing 'filename' parameter");
 
             goto exit;
         }
@@ -269,7 +258,7 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 
         goto exit;
     }
-    token = getToken(opt.account, cfg.debug_mode);
+    token = token.empty() ? getToken(opt.account, cfg.debug_mode) : token;
     std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
 
     api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, maxid);
