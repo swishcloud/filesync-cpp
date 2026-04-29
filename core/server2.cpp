@@ -6,6 +6,7 @@
 #define FILE_SAVE_PATH "/var/FILESYNC/FILE/"
 #define TEMP_FILE_PATH "/var/FILESYNC/TEMP/"
 #define SERVER_ED25519_PUB_KEY_ID "dc4f6be469a84b5c9a9276acaf99ca24"
+#define DOWNLOAD_NON_FULL_FILE true
 filesync::SERVER::SERVER(const int &port) : server(port, 2)
 {
     server.getPublicKeyCB = GetPublicKeyCB;
@@ -137,7 +138,7 @@ public:
             common::print_debug("File is not ready for downloading");
             return 0;
         }
-        if (sf.uploaded_size != sf.size)
+        if (!DOWNLOAD_NON_FULL_FILE && sf.uploaded_size != sf.size)
         {
             common::print_debug("ERROR:File is not fully uploaded, uploaded size:" + std::to_string(sf.uploaded_size) + ", total size:" + std::to_string(sf.size));
             return 0;
