@@ -266,23 +266,25 @@ void begin_upload(filesync::CMD_UPLOAD_OPTION opt)
 
         goto exit;
     }
+    std::cout << "file info: \n"
+              << sf << std::endl;
     if (sf.is_completed)
     {
         common::print_info("file already exists in server");
-
-        goto exit;
+        upload_ok = true;
     }
-    std::cout << "file info: \n"
-              << sf << std::endl;
-    client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
-    if (!client->login())
+    else
     {
-        std::cout << "login failed" << std::endl;
+        client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
+        if (!client->login())
+        {
+            std::cout << "login failed" << std::endl;
 
-        goto exit;
+            goto exit;
+        }
+        uploader = new FileUploader2(client);
+        upload_ok = uploader->upload_file(sf, fs, opt.md5.c_str(), opt.size, opt.token);
     }
-    uploader = new FileUploader2(client);
-    upload_ok = uploader->upload_file(sf, fs, opt.md5.c_str(), opt.size, opt.token);
     if (upload_ok)
     {
         filesync::create_file_action *action = new filesync::create_file_action();
@@ -453,16 +455,23 @@ int filesync::run(int argc, const char *argv[])
 void DownloadCMD::reg(CLI::App *parent)
 {
     auto download = parent->add_subcommand("download", "download file from server");
-    download->add_option("--account", account, "your account name")->required();
+    download->add_option("--account", account, "your account name");
     download->add_option("--path", path, "the file path in the server")->required();
     download->add_option("--commit_id", commit_id, "the commit ID of the file")->required();
     download->add_option("--save_path", save_path, "the path to save the downloaded file")->required();
+    download->add_option("--token", token, "the token for authentication");
     download->callback([this]()
                        { callback(); });
+    auto share_cmd = parent->add_subcommand("share", "file sharing");
+    auto share_download_cmd = share_cmd->add_subcommand("download", "download shared file from server");
+    share_download_cmd->add_option("--path", path, "the file path in the server")->required();
+    share_download_cmd->add_option("--token", token, "the token for authentication")->required();
+    share_download_cmd->add_option("--save_path", save_path, "the path to save the downloaded file")->required();
+    share_download_cmd->callback([this]()
+                                 { shared_callback(); });
 }
-void DownloadCMD::callback()
+void DownloadCMD::shared_callback()
 {
-
     filesync::CONFIG cfg;
     auto err = cfg.load();
     if (err)
@@ -470,7 +479,53 @@ void DownloadCMD::callback()
         filesync::print_info(err.message());
         return;
     }
-    const std::string token = getToken(account, cfg.debug_mode);
+    std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
+    IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, "");
+    filesync::ServerFile sf;
+    int res = api->get_share(path, sf);
+    delete api;
+    if (!res)
+    {
+        common::print_debug("Failed to get file info");
+        return;
+    }
+    if (!sf.is_completed)
+    {
+        common::print_info("the file doesn't exist in server");
+        return;
+    }
+    std::cout << "file info: \n"
+              << sf << std::endl;
+    std::shared_ptr<FS_CLIENT> client = std::make_shared<FS_CLIENT>(sf.ip, sf.port, getServerId());
+    if (!client->login())
+    {
+        std::cout << "login failed" << std::endl;
+        return;
+    }
+    IFileDownloader *downloader = new FileDownloader2(client);
+    int success = downloader->download_file(path, commit_id, save_path, token);
+    std::cout << "DOWNLOAD " << (success ? "succeeded" : "failed") << std::endl;
+    if (success)
+    {
+        exit_code = 0;
+    }
+    delete downloader;
+}
+void DownloadCMD::callback()
+{
+    if (!(account.empty() ^ token.empty()))
+    {
+        common::print_info("Either the 'account' parameter or the 'token' parameter must be specified, and only one of them can be specified.");
+        return;
+    }
+    filesync::CONFIG cfg;
+    auto err = cfg.load();
+    if (err)
+    {
+        filesync::print_info(err.message());
+        return;
+    }
+    token = token.empty() ? getToken(account, cfg.debug_mode) : token;
     std::cout << cfg.server_ip << " " << cfg.server_port << std::endl;
     IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), token, "");
     filesync::ServerFile sf;
@@ -495,6 +550,11 @@ void DownloadCMD::callback()
         return;
     }
     IFileDownloader *downloader = new FileDownloader2(client);
-    downloader->download_file(path, commit_id, save_path, token);
+    int success = downloader->download_file(path, commit_id, save_path, token);
+    std::cout << "DOWNLOAD " << (success ? "succeeded" : "failed") << std::endl;
+    if (success)
+    {
+        exit_code = 0;
+    }
     delete downloader;
 }

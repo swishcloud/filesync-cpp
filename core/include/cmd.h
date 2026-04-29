@@ -42,5 +42,7 @@ private:
     std::string path;
     std::string commit_id;
     std::string save_path;
+    std::string token;
     void callback();
+    void shared_callback();
 };

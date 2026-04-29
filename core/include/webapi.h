@@ -14,6 +14,7 @@ public:
     virtual int get_file(const std::string &path, const std::string &commit_id, filesync::ServerFile &sf) = 0;
     virtual int complete_server_file(const std::string &server_file_id) = 0;
     virtual int add_block(const std::string &server_file_id, const std::string &name, const size_t &start, const size_t &end) = 0;
+    virtual int get_share(const std::string &path, filesync::ServerFile &sf) = 0;
 };
 class WebAPI : public IWebAPI
 {
@@ -95,6 +96,35 @@ public:
         sf.port = std::stoi(data["port"].get<std::string>());
         return 1;
     }
+    int get_share(const std::string &path, filesync::ServerFile &sf)
+    {
+        std::string url_path = common::string_format("/api/share?path=%s", common::url_encode(path.c_str()).c_str());
+        common::http_client c{serverIP, port, url_path.c_str(), token};
+        c.GET();
+        if (c.error)
+        {
+            common::print_info(c.error.message());
+            return 0;
+        }
+        auto j = json::parse(c.resp_text);
+        auto data = j["data"];
+        if (!j["error"].is_null())
+        {
+            common::print_info(common::string_format("Failed to get file info from web server:%s", j["error"].get<std::string>().c_str()));
+            return 0;
+        }
+        sf.md5 = data["Md5"].get<std::string>();
+        sf.is_completed = data["Is_completed"].get<bool>();
+        sf.path = data["Path"].get<std::string>();
+        sf.size = data["Size"].get<std::size_t>();
+        sf.uploaded_size = data["Uploaded_size"].get<std::size_t>();
+        sf.server_file_id = data["Server_file_id"].get<std::string>();
+        sf.ip = data["Ip"].get<std::string>();
+        sf.port = data["Port"].get<int>();
+
+        sf.md5.erase(std::remove(sf.md5.begin(), sf.md5.end(), ' '), sf.md5.end());
+        return 1;
+    }
     int get_file(const std::string &path, const std::string &commit_id, filesync::ServerFile &sf)
     {
         std::string url_path = common::string_format("/api/file?path=%s&commit_id=%s", common::url_encode(path.c_str()).c_str(), commit_id.c_str());
@@ -121,7 +151,7 @@ public:
         sf.ip = data["Ip"].get<std::string>();
         sf.port = data["Port"].get<int>();
 
-        sf.md5.erase(std::remove(sf.md5.begin(), sf.md5.end(), ' '), sf.md5.end()); // remove hyphens if exist
+        sf.md5.erase(std::remove(sf.md5.begin(), sf.md5.end(), ' '), sf.md5.end());
         return 1;
     }
 

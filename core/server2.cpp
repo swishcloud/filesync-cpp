@@ -71,7 +71,7 @@ public:
     PrepareFileHandler(filesync::SERVER *server) : server(server) {}
     int Handle(CLIENT *client, CORE::pMSG msg)
     {
-        // parse a MT_PrepareFile msg, the data contains targetId(16bytes), commit_id(32bytes), server_path_length(1byte), server_path(variable length), token_length(1byte), token(variable length)
+        // parse a MT_PrepareFile msg, the data contains targetId(16bytes), file type(1 byte),  commit_id(32bytes), server_path_length(1byte), server_path(variable length), token_length(1byte), token(variable length)
         char targetId[16];
         char commitId[16];
         int serverPathLen;
@@ -81,6 +81,8 @@ public:
         int index = 0;
         memcpy(targetId, msg->data + index, 16);
         index += 16;
+        int file_type = msg->data[index]; // 0 for share file, 1 for normal file
+        index += 1;
         memcpy(commitId, msg->data + index, 16);
         index += 16;
         serverPathLen = msg->data[index];
@@ -115,7 +117,15 @@ public:
         }
         IWebAPI *api = new WebAPI(cfg.server_ip, common::string_format("%d", cfg.server_port), std::string(token, sizeof(token)), "");
         filesync::ServerFile sf;
-        int res = api->get_file(serverPath, commitIdStr, sf);
+        int res = 0;
+        if (file_type)
+        {
+            res = api->get_file(serverPath, commitIdStr, sf);
+        }
+        else
+        {
+            res = api->get_share(serverPath, sf);
+        }
         delete api;
         if (!res)
         {

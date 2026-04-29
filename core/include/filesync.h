@@ -90,9 +90,7 @@ private:
 	};
 	::CLIENT client;
 	std::condition_variable cv;
-	std::mutex m;
 	std::string serverId;
-	bool downloaded = false;
 	std::mutex download_id_mutex;
 
 public:
@@ -108,12 +106,6 @@ public:
 	~FS_CLIENT()
 	{
 	}
-	void OnFileDownloaded(const char *filepath, bool success)
-	{
-		common::print_info(common::string_format("File download %s", success ? "successful" : "failed"));
-		downloaded = true;
-		cv.notify_one();
-	}
 	int login()
 	{
 		if (!client.connect() || !client.login("xx", "xx"))
@@ -124,15 +116,18 @@ public:
 		return 1;
 	}
 	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
-	void DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
+	int DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
 	{
 		// send a MT_PrepareFile msg to get ready for downloading file, the server will response with a MT_RecordFile msg containing a downloading id when the file is ready
-		const std::string targetId = serverId;									 // 16bytes
-		const int dataLen = 16 + 16 + 1 + server_path.size() + 1 + token.size(); // target_id(16 bytes), commit_id(16 bytes),server_path_len(1 byte),server_path(variable length), token_len(1 byte), token(variable length)
+		const std::string targetId = serverId;										 // 16bytes
+		const int file_type = commit_id.empty() ? 0 : 1;							 // 1 for normal file, 0 for share file
+		const int dataLen = 1 + 16 + 16 + 1 + server_path.size() + 1 + token.size(); // target_id(16 bytes), file_type(1 byte),  commit_id(16 bytes),server_path_len(1 byte),server_path(variable length), token_len(1 byte), token(variable length)
 		char buf[dataLen];
 		int index = 0;
 		memcpy(buf + index, targetId.c_str(), 16);
 		index += 16;
+		buf[index] = file_type;
+		index += 1;
 		std::unique_ptr<char[]> commitIdBytes(hexToBytes(filesync::stripHyphen(commit_id).c_str())); // 16 bytes
 		memcpy(buf + index, commitIdBytes.get(), 16);
 		index += 16;
@@ -146,21 +141,30 @@ public:
 		if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), buf, dataLen))
 		{
 			common::print_info("faild to send msg");
-			return;
+			return 0;
 		}
 		std::unique_lock<std::mutex> dlk(download_id_mutex);
 		if (!download_id_cv.wait_for(dlk, std::chrono::seconds(30), [this]()
 									 { return !downloadId.empty(); }))
 		{
 			common::print_info("failed to receive download id from server");
-			return;
+			return 0;
 		}
-		client._file_downloaded_cb = [this](const char *filepath, bool success)
-		{ OnFileDownloaded(filepath, success); };
+		bool download_ok = false;
+		std::mutex m;
+		std::condition_variable cv;
+		bool downloadEnded = false;
+		client._file_downloaded_cb = [this, &cv, &download_ok, &downloadEnded](const char *filepath, bool success)
+		{
+			download_ok = success;
+			downloadEnded = true;
+			cv.notify_one();
+		};
 		client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str());
 		std::unique_lock<std::mutex> downloadM(m);
-		cv.wait(downloadM, [this]()
-				{ return downloaded; });
+		cv.wait(downloadM, [&downloadEnded]()
+				{ return downloadEnded; });
+		return download_ok;
 	};
 };
 inline int FS_CLIENT::PrepareFileHandler::Handle(CLIENT *client, CORE::pMSG msg)
@@ -473,7 +477,7 @@ class IFileDownloader
 {
 public:
 	virtual ~IFileDownloader() = default;
-	virtual void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token) = 0;
+	virtual int download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token) = 0;
 };
 class FileDownloader2 : public IFileDownloader
 {
@@ -484,9 +488,9 @@ public:
 	FileDownloader2(std::shared_ptr<FS_CLIENT> &client) : client(client)
 	{
 	}
-	void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
+	int download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
 	{
-		client->DownloadFile(server_path, commit_id, save_path, token);
+		return client->DownloadFile(server_path, commit_id, save_path, token);
 	}
 };
 class FileDownloader : public IFileDownloader
@@ -498,7 +502,7 @@ public:
 	FileDownloader(const std::string &server_ip, const std::string &port, const int &server_port) : server_ip(server_ip), port(port), server_port(server_port)
 	{
 	}
-	void download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
+	int download_file(const std::string &server_path, const std::string &commit_id, const std::string &save_path, const std::string &token)
 	{
 		filesync::tcp_client tcp_client{server_ip, std::to_string(server_port)};
 		if (!tcp_client.connect())
@@ -576,6 +580,7 @@ public:
 			auto err = common::string_format("Downloaded a file but the MD5 value is wrong");
 			throw common::exception(err);
 		}
+		return 1;
 	}
 };
 
