@@ -333,7 +333,8 @@ void filesync::CLIENT::connect()
         th = std::thread([this]()
                          {
                              client.connect(); 
-                             client.login("xx", "xx"); });
+                             client.login("filesync", "supersecret");
+                            client.heartbeat(); });
         canConnect = false;
     }
     else
