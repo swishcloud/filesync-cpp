@@ -622,7 +622,7 @@ inline std::string getToken(const std::string account, const bool debugMode)
 		return m[1].str();
 	}
 	return std::string();
-#elif
+#else
 	return std::string();
 #endif
 }

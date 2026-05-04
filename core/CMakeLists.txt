@@ -3,13 +3,13 @@
 #
 cmake_minimum_required (VERSION 3.8)
 set(CORE_TARGET_NAME filesync-core)
-set(TCP_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/TCP")
-set(COMMON_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/COMMON")
-message(STATUS TCP_DIR::::${TCP_DIR})
 find_package(TCP REQUIRED)
 find_package(COMMON REQUIRED)
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
+set(TCP_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/TCP")
+set(COMMON_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/COMMON")
+message(STATUS TCP_DIR::::${TCP_DIR})
 set(DEPENDENCY_SUFFIX iphoneos-arm64)
 else()
 set(DEPENDENCY_SUFFIX  macosx-x86_64)
@@ -33,9 +33,11 @@ find_package(OpenSSL REQUIRED)
 find_package(Boost 1.75.0 REQUIRED COMPONENTS date_time locale thread)
 find_package(nlohmann_json 3.2.0 REQUIRED)
 find_package(Commotion 0.1.1 REQUIRED)
-find_package(bit7z REQUIRED)
+find_package(bit7z64 REQUIRED)
 add_compile_definitions("WIN32_LEAN_AND_MEAN")
 # Add source to this project's executable.
+
+add_library(7-zip INTERFACE IMPORTED)
 add_library(common::common ALIAS COMMON::COMMON)
 add_library(${CORE_TARGET_NAME} "filesync.cpp" "db_manager.cpp" "ChangeCommitter.cpp" "cfg.cpp" "internal.cpp" "server.cpp" "server2.cpp" "cmd.cpp" "cmd/LoginCMD.cpp" "cmd/SyncCMD.cpp" "file.cpp")
 if (MSVC)
@@ -50,7 +52,7 @@ sqlite
 COMMOTION::core
 COMMOTION::server
 COMMOTION::client
-bit7z64)
+bit7z64::bit7z64)
 if (UNIX AND NOT APPLE)
 target_link_libraries(${CORE_TARGET_NAME} PRIVATE -pthread -ldl -lstdc++fs)
 endif()
