@@ -3,12 +3,12 @@
 #
 cmake_minimum_required (VERSION 3.8)
 set(CORE_TARGET_NAME filesync-core)
-find_package(TCP REQUIRED)
-find_package(COMMON REQUIRED)
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 if(${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 set(TCP_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/TCP")
 set(COMMON_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/COMMON")
+set(Commotion_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/COMMOTION")
+set(bit7z64_DIR "$ENV{INSTALL_PREFIX}/lib/cmake/bit7z64")
 message(STATUS TCP_DIR::::${TCP_DIR})
 set(DEPENDENCY_SUFFIX iphoneos-arm64)
 else()
@@ -29,6 +29,8 @@ set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libcrypto.a)
 set(OPENSSL_SSL_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libssl.a)
 set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
 endif()
+find_package(TCP REQUIRED)
+find_package(COMMON REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Boost 1.75.0 REQUIRED COMPONENTS date_time locale thread)
 find_package(nlohmann_json 3.2.0 REQUIRED)
@@ -82,7 +84,7 @@ install(TARGETS sqlite
   EXPORT ${EXPORT_TARGET_NAME}
 )
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/filesync)
+install(DIRECTORY include/filesync TYPE INCLUDE)
 
 # ---- Exported targets file ----
 install(EXPORT ${EXPORT_TARGET_NAME}

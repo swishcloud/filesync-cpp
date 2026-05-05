@@ -1,6 +1,6 @@
-#include "cmd.h"
+#include "filesync/cmd.h"
 #include "common.h"
-#include "filesync.h"
+#include "filesync/filesync.h"
 void SyncCMD::reg(CLI::App *parent)
 {
     auto sync = parent->add_subcommand("sync", "syncing everything")->require_subcommand();

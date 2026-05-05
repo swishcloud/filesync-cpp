@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE filesync_test
 #include <boost/test/included/unit_test.hpp>
-#include "filesync.h"
-#include "change_committer.h"
+#include "filesync/filesync.h"
+#include "filesync/change_committer.h"
 const char *cmd = "build/filesync/filesync";
 const char *token = "zKH5-A7xziVT5vlY_xTwny8UFu-93QpBio-CUThBK2k.25Cd3JKeH_R28O3vGdtfffa-oDJ_f_T8rpWIQ1jU1yw";
 BOOST_AUTO_TEST_CASE(begin_upload_test)

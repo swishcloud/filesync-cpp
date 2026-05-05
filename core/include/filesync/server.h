@@ -5,7 +5,7 @@
 #include <boost/bind/bind.hpp>
 #include <memory>
 #include <vector>
-#include <internal.h>
+#include <filesync/internal.h>
 #include <thread>
 #include <future>
 #include <filesystem>

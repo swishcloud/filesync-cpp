@@ -1,5 +1,5 @@
 #include <boost/test/unit_test.hpp>
-#include "filesync.h"
+#include "filesync/filesync.h"
 #include <string>
 #include <vector>
 #include <optional>
@@ -9,11 +9,12 @@
 // #include "SqliteFileRepository.h"
 // #include "UuidGenerator.h"
 
-static void dumpTree(IFileRepository& repo, const std::string& parentId, int depth = 0)
+static void dumpTree(IFileRepository &repo, const std::string &parentId, int depth = 0)
 {
     const auto items = repo.listChildren(parentId);
 
-    for (const auto& it : items) {
+    for (const auto &it : items)
+    {
         std::string indent(depth * 2, ' ');
         BOOST_TEST_MESSAGE(
             indent +
@@ -25,27 +26,31 @@ static void dumpTree(IFileRepository& repo, const std::string& parentId, int dep
             ", localPath=" + (it.localPath.empty() ? "(empty)" : it.localPath) +
             ", placeholder=" + std::string(it.isPlaceholder ? "true" : "false") +
             ", pinned=" + std::string(it.pinnedOffline ? "true" : "false") +
-            ")"
-        );
+            ")");
 
-        if (it.isDir) {
+        if (it.isDir)
+        {
             dumpTree(repo, it.id, depth + 1);
         }
     }
 }
 
-static bool containsName(const std::vector<FileItem>& items, const std::string& name, bool isDir)
+static bool containsName(const std::vector<FileItem> &items, const std::string &name, bool isDir)
 {
-    for (const auto& it : items) {
-        if (it.name == name && it.isDir == isDir) return true;
+    for (const auto &it : items)
+    {
+        if (it.name == name && it.isDir == isDir)
+            return true;
     }
     return false;
 }
 
-static std::optional<FileItem> findByName(const std::vector<FileItem>& items, const std::string& name, bool isDir)
+static std::optional<FileItem> findByName(const std::vector<FileItem> &items, const std::string &name, bool isDir)
 {
-    for (const auto& it : items) {
-        if (it.name == name && it.isDir == isDir) return it;
+    for (const auto &it : items)
+    {
+        if (it.name == name && it.isDir == isDir)
+            return it;
     }
     return std::nullopt;
 }
@@ -54,8 +59,8 @@ BOOST_AUTO_TEST_CASE(DB_Full_CRUD_Test)
 {
     filesync::UuidGenerator generator;
     const std::string dbpath = (std::filesystem::temp_directory_path() /
-              ("filesync_test_" + generator.newUuid() + ".db")).string();
-
+                                ("filesync_test_" + generator.newUuid() + ".db"))
+                                   .string();
 
     // 1) Create schema
     SqliteDbSchema schema(dbpath);
@@ -63,7 +68,7 @@ BOOST_AUTO_TEST_CASE(DB_Full_CRUD_Test)
 
     // 2) Construct repo with clear lifetime (no temporary binding)
     SqliteFileRepository repoImpl(dbpath, generator);
-    IFileRepository& repo = repoImpl;
+    IFileRepository &repo = repoImpl;
 
     // -------------------------
     // A. CREATE + LIST + GET
@@ -72,10 +77,10 @@ BOOST_AUTO_TEST_CASE(DB_Full_CRUD_Test)
     const std::string folderABC = repo.createFolder("root", "folderABC");
 
     const std::string rootFile = repo.createFile("root", "root_file.txt");
-    const std::string file1    = repo.createFile(folder123, "file1.txt");
-    const std::string file2    = repo.createFile(folder123, "file2.txt");
+    const std::string file1 = repo.createFile(folder123, "file1.txt");
+    const std::string file2 = repo.createFile(folder123, "file2.txt");
 
-    const std::string subdir   = repo.createFolder(folder123, "sub");
+    const std::string subdir = repo.createFolder(folder123, "sub");
     const std::string deepFile = repo.createFile(subdir, "deep.txt");
     (void)deepFile;
 
@@ -138,7 +143,7 @@ BOOST_AUTO_TEST_CASE(DB_Full_CRUD_Test)
         BOOST_TEST(!containsName(items123, "file2.txt", false)); // moved out
 
         auto itemsABC = repo.listChildren(folderABC);
-        BOOST_TEST(containsName(itemsABC, "file2.txt", false));  // moved in
+        BOOST_TEST(containsName(itemsABC, "file2.txt", false)); // moved in
 
         auto opt = repo.getById(file2);
         BOOST_TEST(static_cast<bool>(opt));
@@ -162,8 +167,8 @@ BOOST_AUTO_TEST_CASE(DB_Full_CRUD_Test)
     // -------------------------
     // E. REMOVE (tombstone) + verify it's hidden from listing
     // -------------------------
-    repo.remove(rootFile);       // remove a root file
-    repo.remove(folderABC);      // remove a folder (tombstone)
+    repo.remove(rootFile);  // remove a root file
+    repo.remove(folderABC); // remove a folder (tombstone)
 
     BOOST_TEST_MESSAGE("==== TREE AFTER REMOVE ====");
     dumpTree(repo, "root");

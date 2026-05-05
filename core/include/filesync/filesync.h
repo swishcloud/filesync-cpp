@@ -10,17 +10,17 @@
 #include "db_manager.h"
 #include <unordered_map>
 #include <common.h>
-#include <change_committer.h>
-#include <cfg.h>
+#include <filesync/change_committer.h>
+#include <filesync/cfg.h>
 #include <memory>
 #include <commotion/client/client.h>
-#include <internal.h>
+#include <filesync/internal.h>
 #include <monitor.h>
-#include "webapi.h"
+#include "filesync/webapi.h"
 #include <queue>
 #include <mutex>
-#include <server.h>
-#include <logger.h>
+#include <filesync/server.h>
+#include <commotion/core/logger.h>
 // TODO: Reference additional headers your program requires here.
 namespace filesync
 {
@@ -113,6 +113,7 @@ public:
 			std::cout << "failed to login in" << std::endl;
 			return 0;
 		}
+		client.heartbeat();
 		return 1;
 	}
 	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
@@ -462,11 +463,12 @@ public:
 };
 class FileUploader2 : public IFileUploader
 {
+private:
+	std::shared_ptr<FS_CLIENT> client;
+
 public:
 	FileUploader2(std::shared_ptr<FS_CLIENT> &client) : client(client) {}
 
-private:
-	std::shared_ptr<FS_CLIENT> client;
 	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &_token)
 	{
 		client->Upload(fs, sf, md5, size, _token);

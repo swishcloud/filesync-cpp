@@ -1,4 +1,4 @@
-#include <cfg.h>
+#include "filesync/cfg.h"
 #include <filesystem>
 #include <regex>
 filesync::CONFIG::~CONFIG()

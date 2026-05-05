@@ -1,6 +1,6 @@
-#include "server.h"
-#include "webapi.h"
-#include "cfg.h"
+#include "filesync/server.h"
+#include "filesync/webapi.h"
+#include "filesync/cfg.h"
 #include <fstream>
 #define CERT_DIRECTORY_PATH "/var/FILESYNC/CERT/"
 #define FILE_SAVE_PATH "/var/FILESYNC/FILE/"

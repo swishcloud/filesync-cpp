@@ -1,9 +1,9 @@
 #ifndef CHANGE_COMMITTER
 #define CHANGE_COMMITTER
 #include <vector>
-#include <db_manager.h>
-#include <filesync.h>
-#include "internal.h"
+#include <filesync/db_manager.h>
+#include <filesync/filesync.h>
+#include "filesync/internal.h"
 namespace filesync
 {
 	class FileSync;

@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <memory>
-#include <logger.h>
+#include <commotion/core/logger.h>
 using json = nlohmann::json;
 namespace filesync
 {

@@ -1,6 +1,6 @@
-#include "cmd.h"
+#include "filesync/cmd.h"
 #include "common.h"
-#include "filesync.h"
+#include "filesync/filesync.h"
 void LoginCMD::reg(CLI::App *parent)
 {
     auto cmd = parent->add_subcommand("login", "login to server");

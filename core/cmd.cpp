@@ -1,6 +1,6 @@
-#include "filesync.h"
-#include "CLI11.hpp"
-#include "cmd.h"
+#include "filesync/filesync.h"
+#include "filesync/CLI11.hpp"
+#include "filesync/cmd.h"
 int exit_code = -1;
 void begin_listen(std::string listen_port, std::string files_path)
 {

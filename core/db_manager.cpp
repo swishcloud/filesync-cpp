@@ -1,10 +1,10 @@
 #include <sqlite3.h>
-#include <filesync.h>
+#include "filesync/filesync.h"
 #include <common.h>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include "db_manager.h"
+#include "filesync/db_manager.h"
 #include <assert.h>
 #include <regex>
 using namespace nlohmann;

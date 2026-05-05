@@ -1,4 +1,4 @@
-#include <internal.h>
+#include "filesync/internal.h"
 #include <mutex>
 namespace filesync
 {

@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <common.h>
-#include <internal.h>
+#include <filesync/internal.h>
 using json = nlohmann::json;
 namespace filesync
 {

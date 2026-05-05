@@ -1,14 +1,14 @@
 ﻿// filesync.cpp : Defines the entry point for the application.
 //
 #include <http.h>
-#include "filesync.h"
+#include "filesync/filesync.h"
 #include <locale.h>
-#include "db_manager.h"
+#include "filesync/db_manager.h"
 #include <nlohmann/json.hpp>
 #include <assert.h>
 #include <regex>
-#include <cfg.h>
-#include <server.h>
+#include <filesync/cfg.h>
+#include <filesync/server.h>
 #include "boost/algorithm/string.hpp"
 #include <boost/program_options.hpp>
 using namespace nlohmann;
@@ -1023,7 +1023,7 @@ filesync::FileSync::FileSync(char *server_location, CONFIG cfg)
 {
 	this->cfg = cfg;
 	this->server_location = server_location;
-	this->logger = new Logger();
+	this->logger = new Logger("filesync");
 	this->db = new filesync::db_manager{this->logger};
 	this->committer = new ChangeCommitter(cfg.server_ip, cfg.server_port);
 	this->monitor = NULL;
