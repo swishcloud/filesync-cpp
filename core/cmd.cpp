@@ -502,7 +502,13 @@ void DownloadCMD::shared_callback()
         std::cout << "login failed" << std::endl;
         return;
     }
-    IFileDownloader *downloader = new FileDownloader2(client);
+    size_t written = 0;
+    auto receiveCB = [&](int size)
+    {
+        written += size;
+        std::cout << written << "/" << sf.size << " " << (written * 10000 / sf.size) / (double)100 << "%" << std::endl;
+    };
+    IFileDownloader *downloader = new FileDownloader2(client, receiveCB);
     int success = downloader->download_file(path, commit_id, save_path, token);
     std::cout << "DOWNLOAD " << (success ? "succeeded" : "failed") << std::endl;
     if (success)
@@ -549,7 +555,13 @@ void DownloadCMD::callback()
         std::cout << "login failed" << std::endl;
         return;
     }
-    IFileDownloader *downloader = new FileDownloader2(client);
+    size_t written = 0;
+    auto receiveCB = [&](int size)
+    {
+        written += size;
+        std::cout << written << "/" << sf.size << " " << (written * 10000 / sf.size) / (double)100 << "%" << std::endl;
+    };
+    IFileDownloader *downloader = new FileDownloader2(client, receiveCB);
     int success = downloader->download_file(path, commit_id, save_path, token);
     std::cout << "DOWNLOAD " << (success ? "succeeded" : "failed") << std::endl;
     if (success)
