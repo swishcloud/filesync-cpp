@@ -119,6 +119,7 @@ public:
 	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
 	int DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token)
 	{
+		client.setHeartbeatTimeout(120);
 		// send a MT_PrepareFile msg to get ready for downloading file, the server will response with a MT_RecordFile msg containing a downloading id when the file is ready
 		const std::string targetId = serverId;										 // 16bytes
 		const int file_type = commit_id.empty() ? 0 : 1;							 // 1 for normal file, 0 for share file
