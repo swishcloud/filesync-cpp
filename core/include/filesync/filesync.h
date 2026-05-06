@@ -117,7 +117,7 @@ public:
 		return 1;
 	}
 	int Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token);
-	int DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token,FileReceiver::ReceiveCallback receiveCB)
+	int DownloadFile(std::string server_path, std::string commit_id, std::string save_path, std::string token, FileReceiver::ReceiveCallback receiveCB)
 	{
 		client.setHeartbeatTimeout(120);
 		// send a MT_PrepareFile msg to get ready for downloading file, the server will response with a MT_RecordFile msg containing a downloading id when the file is ready
@@ -162,7 +162,11 @@ public:
 			downloadEnded = true;
 			cv.notify_one();
 		};
-		client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str());
+		if (!client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str()))
+		{
+			common::print_info("failed to send file downloading request");
+			return 0;
+		}
 		client.fileDownloadTask->getFileReceiver()->receiveCB = receiveCB;
 		std::unique_lock<std::mutex> downloadM(m);
 		cv.wait(downloadM, [&downloadEnded]()
@@ -473,8 +477,7 @@ public:
 
 	bool upload_file(const filesync::ServerFile &sf, std::shared_ptr<std::istream> fs, const char *const md5, const size_t &size, const std::string &_token)
 	{
-		client->Upload(fs, sf, md5, size, _token);
-		return true;
+		return client->Upload(fs, sf, md5, size, _token);
 	}
 };
 class IFileDownloader
