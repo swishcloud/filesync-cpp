@@ -81,7 +81,7 @@ namespace filesync
         std::queue<std::pair<std::string, filesync::ServerFile>> downloadingFiles;
 
     public:
-        SERVER(const int &port);
+        SERVER(const int &port, const int &thread_count);
         void listen();
         std::string addDownloadingFile(const filesync::ServerFile &sf)
         {

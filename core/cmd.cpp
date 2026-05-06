@@ -2,30 +2,6 @@
 #include "filesync/CLI11.hpp"
 #include "filesync/cmd.h"
 int exit_code = -1;
-void begin_listen(std::string listen_port, std::string files_path)
-{
-    filesync::CONFIG cfg;
-    auto err = cfg.load();
-    if (err)
-    {
-        filesync::print_info(err.message());
-        return;
-    }
-    filesync::FileSync *filesync = new filesync::FileSync{common::strcpy("/"), cfg};
-    common::http_client http_client{filesync->cfg.server_ip, filesync->cfg.server_port};
-#ifdef __linux__
-    filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
-#else
-    filesync::server s{(short)std::stoi(listen_port.c_str()), files_path, http_client};
-#endif
-    int port = std::stoi(listen_port);
-    filesync::SERVER server(port);
-    filesync::CLIENT client("127.0.0.1", port, server);
-    client.connect();
-    server.listen();
-
-    filesync::print_info("exited.");
-}
 void begin_export(filesync::PATH path, std::string commit_id, std::string max_commit_id, filesync::PATH destination_folder, std::string account)
 {
     common::print_info(common::string_format("exporting server directory %s with content since %s until %s to local directory %s", path.string().c_str(), std::string(commit_id) == "/" ? "first commit" : commit_id.c_str(), max_commit_id.c_str(), destination_folder.string().c_str()));
@@ -431,12 +407,18 @@ int filesync::run(int argc, const char *argv[])
     setlocale(LC_ALL, "zh_CN.UTF-8");
     CLI::App app("filesync tool");
     std::string listen_port, files_path;
+    int thread_count;
 
     auto listen = app.add_subcommand("listen", "listen as a server node");
     listen->add_option("--listen_port", listen_port, "the tcp listen port")->required();
-    listen->add_option("--files_path", files_path, "the path of files repo")->required();
-    listen->callback([&listen_port, &files_path]()
-                     { begin_listen(listen_port, files_path); });
+    listen->add_option("--thread_count", thread_count, "the thread count to handle multiple clients simultaneously")->default_val(2);
+    listen->callback([&listen_port, &files_path, &thread_count]()
+                     { 
+    int port = std::stoi(listen_port);
+    filesync::SERVER server(port, thread_count);
+    filesync::CLIENT client("127.0.0.1", port, server);
+    client.connect();
+    server.listen(); });
 
     CMD_REPORT(&app);
     CMD_SERVER_CLEAN(&app);

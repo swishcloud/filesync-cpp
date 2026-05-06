@@ -7,7 +7,7 @@
 #define TEMP_FILE_PATH "/var/FILESYNC/TEMP/"
 #define SERVER_ED25519_PUB_KEY_ID "dc4f6be469a84b5c9a9276acaf99ca24"
 #define DOWNLOAD_NON_FULL_FILE true
-filesync::SERVER::SERVER(const int &port) : server(port, 2)
+filesync::SERVER::SERVER(const int &port, const int &thread_count) : server(port, thread_count)
 {
     server.getPublicKeyCB = GetPublicKeyCB;
 }
