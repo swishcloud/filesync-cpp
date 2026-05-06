@@ -272,6 +272,7 @@ public:
 };
 inline int FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const filesync::ServerFile &sf, const char *md5, size_t size, std::string _token)
 {
+	client.setHeartbeatTimeout(120);
 	if (sf.server_file_id.size() != 36 || sf.path.size() != 36 || strlen(md5) != 32)
 	{
 		std::cout << "invalid parameters" << std::endl;
