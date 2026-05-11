@@ -159,7 +159,7 @@ public:
         respIndex += 16;
         memcpy(respData + respIndex, sha256Bytes.get(), 32);
         respIndex += 32;
-        client->sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), respData, respIndex);
+        client->sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), NULL, respData, respIndex);
         return 1;
     }
 };

@@ -140,7 +140,7 @@ public:
 		buf[index] = token.size();
 		index += 1;
 		memcpy(buf + index, token.c_str(), token.size());
-		if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), buf, dataLen))
+		if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_PrepareFile), NULL, buf, dataLen))
 		{
 			common::print_info("faild to send msg");
 			return 0;
@@ -319,7 +319,7 @@ inline int FS_CLIENT::Upload(std::shared_ptr<std::istream> fs, const filesync::S
 	index += 32;
 	memcpy(buf + index, token.c_str(), token.size());
 	// send buf to server
-	if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_RecordFile), buf, sizeof(buf)))
+	if (!client.sendMessage(static_cast<::MsgType>(filesync::MT_RecordFile), NULL, buf, sizeof(buf)))
 	{
 		return 0;
 	}
