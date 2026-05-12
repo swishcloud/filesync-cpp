@@ -162,12 +162,12 @@ public:
 			downloadEnded = true;
 			cv.notify_one();
 		};
+		client.receiveCB = receiveCB;
 		if (!client.requestFile(serverId.c_str(), downloadId.c_str(), save_path.c_str(), downloadSha256.c_str()))
 		{
 			common::print_info("failed to send file downloading request");
 			return 0;
 		}
-		client.fileDownloadTask->getFileReceiver()->receiveCB = receiveCB;
 		std::unique_lock<std::mutex> downloadM(m);
 		cv.wait(downloadM, [&downloadEnded]()
 				{ return downloadEnded; });
