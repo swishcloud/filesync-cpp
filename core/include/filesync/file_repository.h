@@ -50,6 +50,7 @@ struct FileItem
     std::string server_parent_id_snapshot;
     std::string server_name_snapshot;
     SyncStage syncStage;
+    double progress;
 };
 
 class IFileRepository
